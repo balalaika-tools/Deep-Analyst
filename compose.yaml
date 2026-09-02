@@ -1,0 +1,448 @@
+name: deep-analyst
+
+x-langfuse-depends-on: &langfuse-depends-on
+  postgres:
+    condition: service_healthy
+  clickhouse:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  minio:
+    condition: service_healthy
+
+x-langfuse-environment: &langfuse-environment
+  NEXTAUTH_URL: http://localhost:3000
+  DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-postgres}
+  SALT: ${SALT:?Set SALT in .env}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+  TELEMETRY_ENABLED: "false"
+  LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_USE_AZURE_BLOB: "false"
+  LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${REDIS_AUTH:?Set REDIS_AUTH in .env}
+  LANGFUSE_BULLMQ_SKIP_REDIS_VERSION_CHECK: "false"
+  REDIS_TLS_ENABLED: "false"
+
+services:
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:${LANGFUSE_VERSION:?Set LANGFUSE_VERSION in .env}@${LANGFUSE_WORKER_IMAGE_DIGEST:?Set LANGFUSE_WORKER_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    depends_on: *langfuse-depends-on
+    environment: *langfuse-environment
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$${HOSTNAME}:3030/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:${LANGFUSE_VERSION:?Set LANGFUSE_VERSION in .env}@${LANGFUSE_WEB_IMAGE_DIGEST:?Set LANGFUSE_WEB_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    depends_on: *langfuse-depends-on
+    environment:
+      <<: *langfuse-environment
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: http://minio:9000
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$${HOSTNAME}:3000/api/public/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  postgres:
+    image: docker.io/postgres:${POSTGRES_VERSION:?Set POSTGRES_VERSION in .env}@${POSTGRES_IMAGE_DIGEST:?Set POSTGRES_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:?Set CLICKHOUSE_VERSION in .env}@${CLICKHOUSE_IMAGE_DIGEST:?Set CLICKHOUSE_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: docker.io/redis:${REDIS_VERSION:?Set REDIS_VERSION in .env}@${REDIS_IMAGE_DIGEST:?Set REDIS_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_AUTH:?Set REDIS_AUTH in .env}
+      - --maxmemory-policy
+      - noeviction
+    environment:
+      REDIS_AUTH: ${REDIS_AUTH:?Set REDIS_AUTH in .env}
+    volumes:
+      - langfuse_redis_data:/data
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_AUTH}\" ping | grep -q PONG"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  lgtm:
+    image: docker.io/grafana/otel-lgtm:${LGTM_VERSION:?Set LGTM_VERSION in .env}@${LGTM_IMAGE_DIGEST:?Set LGTM_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    environment:
+      ENABLE_LOGS_OTELCOL: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      # Explore requires Editor access. This remains safe for local development because every
+      # Grafana/OTLP port below is bound exclusively to the host loopback interface.
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      LANGFUSE_AUTH_STRING: ${LANGFUSE_AUTH_STRING:-}
+    ports:
+      - "127.0.0.1:3001:3000"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:4327:4327"
+      - "127.0.0.1:4328:4328"
+      - "127.0.0.1:13133:13133"
+    volumes:
+      - ./config/otel-lgtm/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - lgtm_data:/data
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD", "/otel-lgtm/docker/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  minio:
+    image: cgr.dev/chainguard/minio@${MINIO_IMAGE_DIGEST:?Set MINIO_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:9090:9000"
+      - "127.0.0.1:9091:9001"
+    volumes:
+      - langfuse_minio_data:/data
+    networks:
+      - langfuse
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  postgres-app:
+    # ParadeDB bundles pg_search (BM25) and pgvector on PostgreSQL 17.
+    image: docker.io/paradedb/paradedb:${PARADEDB_VERSION:?Set PARADEDB_VERSION in .env}@${PARADEDB_IMAGE_DIGEST:?Set PARADEDB_IMAGE_DIGEST in .env}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_APP_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_APP_DB:-app}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - app_postgres_data:/var/lib/postgresql/data
+      - ./config/postgres-app/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  evidence-seed:
+    # The official MinIO client image creates the isolated bucket identity and mirrors
+    # only the runtime evidence contract. It is the only service that sees dataset files.
+    image: docker.io/minio/mc:${MINIO_MC_VERSION:?Set MINIO_MC_VERSION in .env}@${MINIO_MC_IMAGE_DIGEST:?Set MINIO_MC_IMAGE_DIGEST in .env}
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${EVIDENCE_S3_BUCKET}"
+        printf '%s\n' \
+          '{"Version":"2012-10-17","Statement":[' \
+          '{"Effect":"Allow","Action":["s3:GetBucketLocation","s3:ListBucket"],"Resource":["arn:aws:s3:::'"$${EVIDENCE_S3_BUCKET}"'"]},' \
+          '{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::'"$${EVIDENCE_S3_BUCKET}"'/*"]}' \
+          ']}' > /tmp/evidence-policy.json
+        mc admin user add local "$${EVIDENCE_S3_ACCESS_KEY}" "$${EVIDENCE_S3_SECRET_KEY}"
+        mc admin policy create local evidence-bucket /tmp/evidence-policy.json
+        mc admin policy attach local evidence-bucket --user "$${EVIDENCE_S3_ACCESS_KEY}"
+        mc mirror --overwrite --remove /seed/raw/ \
+          "local/$${EVIDENCE_S3_BUCKET}/datasets/$${DATASET_EDITION}/raw/"
+        mc mirror --overwrite /seed/manifest/ \
+          "local/$${EVIDENCE_S3_BUCKET}/datasets/$${DATASET_EDITION}/"
+        mc mirror --overwrite --remove --exclude '.gitkeep' /seed/indexes/ \
+          "local/$${EVIDENCE_S3_BUCKET}/indexes/$${DATASET_EDITION}/"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      EVIDENCE_S3_BUCKET: ${EVIDENCE_S3_BUCKET:-evidence}
+      EVIDENCE_S3_ACCESS_KEY: ${EVIDENCE_S3_ACCESS_KEY:?Set EVIDENCE_S3_ACCESS_KEY in .env}
+      EVIDENCE_S3_SECRET_KEY: ${EVIDENCE_S3_SECRET_KEY:?Set EVIDENCE_S3_SECRET_KEY in .env}
+      DATASET_EDITION: ${DATASET_EDITION:-en}
+    volumes:
+      - ./data/dataset/editions/en/data/raw:/seed/raw:ro
+      - ./data/dataset/editions/en/data/manifest.json:/seed/manifest/manifest.json:ro
+      - ./data/dataset/indexes/en:/seed/indexes:ro
+    networks:
+      - langfuse
+
+  ingestion:
+    # One-shot: runs to completion, exits 0 on both a completed and a skipped run, and
+    # is never restarted, so dependents can use service_completed_successfully.
+    image: deep-analyst-ingestion:local
+    build:
+      context: .
+      dockerfile: services/ingestion/Dockerfile
+    restart: "no"
+    depends_on:
+      postgres-app:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      evidence-seed:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_APP_USER:-app}:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres-app:5432/${POSTGRES_APP_DB:-app}
+      EVIDENCE_S3_ENDPOINT: http://minio:9000
+      EVIDENCE_S3_BUCKET: ${EVIDENCE_S3_BUCKET:-evidence}
+      EVIDENCE_S3_ACCESS_KEY: ${EVIDENCE_S3_ACCESS_KEY:?Set EVIDENCE_S3_ACCESS_KEY in .env}
+      EVIDENCE_S3_SECRET_KEY: ${EVIDENCE_S3_SECRET_KEY:?Set EVIDENCE_S3_SECRET_KEY in .env}
+      DATASET_EDITION: ${DATASET_EDITION:-en}
+      ENVIRONMENT_NAME: ${ENVIRONMENT_NAME:?Set ENVIRONMENT_NAME in .env}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      BEDROCK_CHAT_MODEL_ID: ${BEDROCK_CHAT_MODEL_ID:-}
+      BEDROCK_EMBEDDING_MODEL_ID: ${BEDROCK_EMBEDDING_MODEL_ID:-}
+      # Policy overrides; empty means "use config/ingestion/local.yaml".
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      CAPTURE_AI_CONTENT: ${CAPTURE_AI_CONTENT:-}
+      LOG_EXPORT: ${LOG_EXPORT:-}
+    volumes:
+      # No repository evidence is mounted; only application policy is visible.
+      - ./config/ingestion:/app/config/ingestion:ro
+    networks:
+      - app
+      - langfuse
+
+  agent-db-init:
+    # One-shot owner-authority boundary. It runs only after evidence ingestion has either
+    # completed or exited successfully because the matching receipt was already present.
+    image: deep-analyst-investigation-agent:local
+    build:
+      context: .
+      dockerfile: services/investigation_agent/Dockerfile
+    command: ["/app/.venv/bin/agent-db-init"]
+    restart: "no"
+    depends_on:
+      postgres-app:
+        condition: service_healthy
+      ingestion:
+        condition: service_completed_successfully
+    environment:
+      ENVIRONMENT_NAME: ${ENVIRONMENT_NAME:?Set ENVIRONMENT_NAME in .env}
+      INVESTIGATION_AGENT_HOST: ${INVESTIGATION_AGENT_HOST:?Set INVESTIGATION_AGENT_HOST in .env}
+      INVESTIGATION_AGENT_PORT: ${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}
+      AWS_REGION: ${AWS_REGION:?Set AWS_REGION in .env}
+      BEDROCK_CHAT_MODEL_ID: ${BEDROCK_CHAT_MODEL_ID:?Set BEDROCK_CHAT_MODEL_ID in .env}
+      BEDROCK_EMBEDDING_MODEL_ID: ${BEDROCK_EMBEDDING_MODEL_ID:?Set BEDROCK_EMBEDDING_MODEL_ID in .env}
+      EXPECTED_AGENT_INITIALIZER_VERSION: ${EXPECTED_AGENT_INITIALIZER_VERSION:?Set EXPECTED_AGENT_INITIALIZER_VERSION in .env}
+      AGENT_OWNER_DATABASE_URL: ${AGENT_OWNER_DATABASE_URL:?Set AGENT_OWNER_DATABASE_URL in .env}
+      AGENT_READER_PASSWORD: ${AGENT_READER_PASSWORD:?Set AGENT_READER_PASSWORD in .env}
+      AGENT_WRITER_PASSWORD: ${AGENT_WRITER_PASSWORD:?Set AGENT_WRITER_PASSWORD in .env}
+    volumes:
+      - ./config/investigation-agent:/app/config/investigation-agent:ro
+    networks:
+      - app
+
+  investigation-agent:
+    # The serving process has only the reader and checkpoint-writer DSNs. In particular, it
+    # receives neither the database-owner DSN nor either role-creation password.
+    image: deep-analyst-investigation-agent:local
+    build:
+      context: .
+      dockerfile: services/investigation_agent/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres-app:
+        condition: service_healthy
+      ingestion:
+        condition: service_completed_successfully
+      agent-db-init:
+        condition: service_completed_successfully
+    environment:
+      ENVIRONMENT_NAME: ${ENVIRONMENT_NAME:?Set ENVIRONMENT_NAME in .env}
+      INVESTIGATION_AGENT_HOST: ${INVESTIGATION_AGENT_HOST:?Set INVESTIGATION_AGENT_HOST in .env}
+      INVESTIGATION_AGENT_PORT: ${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}
+      AWS_REGION: ${AWS_REGION:?Set AWS_REGION in .env}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      BEDROCK_CHAT_MODEL_ID: ${BEDROCK_CHAT_MODEL_ID:?Set BEDROCK_CHAT_MODEL_ID in .env}
+      BEDROCK_EMBEDDING_MODEL_ID: ${BEDROCK_EMBEDDING_MODEL_ID:?Set BEDROCK_EMBEDDING_MODEL_ID in .env}
+      EXPECTED_AGENT_INITIALIZER_VERSION: ${EXPECTED_AGENT_INITIALIZER_VERSION:?Set EXPECTED_AGENT_INITIALIZER_VERSION in .env}
+      AGENT_READER_DATABASE_URL: ${AGENT_READER_DATABASE_URL:?Set AGENT_READER_DATABASE_URL in .env}
+      AGENT_WRITER_DATABASE_URL: ${AGENT_WRITER_DATABASE_URL:?Set AGENT_WRITER_DATABASE_URL in .env}
+      READER_POOL_MIN_SIZE: ${READER_POOL_MIN_SIZE:-1}
+      READER_POOL_MAX_SIZE: ${READER_POOL_MAX_SIZE:-5}
+      WRITER_POOL_MIN_SIZE: ${WRITER_POOL_MIN_SIZE:-1}
+      WRITER_POOL_MAX_SIZE: ${WRITER_POOL_MAX_SIZE:-5}
+      POOL_ACQUIRE_TIMEOUT_S: ${POOL_ACQUIRE_TIMEOUT_S:-5.0}
+      READINESS_TIMEOUT_S: ${READINESS_TIMEOUT_S:-5.0}
+      SHUTDOWN_TIMEOUT_S: ${SHUTDOWN_TIMEOUT_S:-30.0}
+      MAIN_MODEL_CALL_LIMIT: ${MAIN_MODEL_CALL_LIMIT:-20}
+      MAIN_TOOL_CALL_LIMIT: ${MAIN_TOOL_CALL_LIMIT:-12}
+      NESTED_MODEL_CALL_LIMIT: ${NESTED_MODEL_CALL_LIMIT:-6}
+      NESTED_TOOL_CALL_LIMIT: ${NESTED_TOOL_CALL_LIMIT:-3}
+      CLOSURE_MODEL_CALLS: ${CLOSURE_MODEL_CALLS:-1}
+      MAX_CONTEXT_TOKENS: ${MAX_CONTEXT_TOKENS:-32000}
+      MAX_EVIDENCE_CARDS: ${MAX_EVIDENCE_CARDS:-200}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://lgtm:4318}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://lgtm:4328/v1/traces}
+      LOG_EXPORT: ${LOG_EXPORT:-otlp}
+      CAPTURE_AI_CONTENT: ${CAPTURE_AI_CONTENT:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}:${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}"
+    volumes:
+      - ./config/investigation-agent:/app/config/investigation-agent:ro
+    networks:
+      - app
+      - langfuse
+    stop_grace_period: 35s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /app/.venv/bin/python -c "import os, urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:' +
+          os.environ['INVESTIGATION_AGENT_PORT'] + '/ready', timeout=3).close()"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  investigation-web:
+    image: deep-analyst-investigation-web:local
+    build:
+      context: .
+      dockerfile: services/investigation_web/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Server-only URL used by the Next.js proxy. Browsers never contact FastAPI directly.
+      INVESTIGATION_AGENT_URL: http://investigation-agent:${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}
+    ports:
+      - "127.0.0.1:${INVESTIGATION_WEB_PORT:-3002}:3000"
+    networks:
+      - app
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/').then(response => {
+            if (!response.ok) process.exit(1)
+          }).catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+networks:
+  langfuse: {}
+  app: {}
+
+volumes:
+  langfuse_postgres_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_redis_data:
+  langfuse_minio_data:
+  lgtm_data:
+  app_postgres_data:

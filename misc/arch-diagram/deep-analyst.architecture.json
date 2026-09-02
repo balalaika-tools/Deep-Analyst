@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Deep Analyst — Data Flow and Agent Orchestration",
+    "locale": "en",
+    "output": "deep-analyst-architecture.html",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": { "label": "Services" }
+      }
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [54, 104],
+    "cols": 5,
+    "gapX": 72,
+    "gapY": 72,
+    "cellW": 158,
+    "cellH": 68
+  },
+  "components": [
+    {
+      "id": "frontend",
+      "type": "frontend",
+      "label": "Investigation UI",
+      "sublabel": "Next.js chat",
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Investigator Agent",
+      "sublabel": "LangGraph orchestrator",
+      "tag": "3 tools",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "rag-agent",
+      "type": "backend",
+      "label": "Hybrid RAG Subagent",
+      "sublabel": "BM25 + vector fusion",
+      "tag": "search_evidence",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "sql-agent",
+      "type": "backend",
+      "label": "SQL Subagent",
+      "sublabel": "Policy-gated SELECT",
+      "tag": "query_records",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "graph-tool",
+      "type": "backend",
+      "label": "Graph RAG Tool",
+      "sublabel": "Deterministic traversal",
+      "tag": "find_connections",
+      "row": 1,
+      "col": 4
+    },
+    {
+      "id": "communications",
+      "type": "external",
+      "label": "Communications",
+      "sublabel": "CDR + email",
+      "row": 2,
+      "col": 0
+    },
+    {
+      "id": "financial",
+      "type": "external",
+      "label": "Financial Data",
+      "sublabel": "Accounts + transfers",
+      "row": 2,
+      "col": 1
+    },
+    {
+      "id": "documents",
+      "type": "external",
+      "label": "Documents",
+      "sublabel": "Reports + text",
+      "row": 2,
+      "col": 2
+    },
+    {
+      "id": "normalize",
+      "type": "backend",
+      "label": "Normalize + Rules",
+      "sublabel": "Hard fields + IDs",
+      "tag": "deterministic",
+      "row": 3,
+      "col": 1
+    },
+    {
+      "id": "extract",
+      "type": "backend",
+      "label": "LLM Extractor",
+      "sublabel": "Entities + relationships",
+      "tag": "constrained LLM",
+      "row": 3,
+      "col": 2
+    },
+    {
+      "id": "evidence-db",
+      "type": "database",
+      "label": "Evidence Graph DB",
+      "sublabel": "records + graph",
+      "tag": "BM25 + pgvector",
+      "row": 3,
+      "col": 3
+    },
+    {
+      "id": "langfuse",
+      "type": "backend",
+      "label": "Langfuse",
+      "sublabel": "LLM observability",
+      "tag": "self-hosted",
+      "row": 3,
+      "col": 4
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Investigation runtime",
+      "wraps": ["frontend", "orchestrator", "rag-agent", "sql-agent", "graph-tool"]
+    },
+    {
+      "kind": "region",
+      "label": "Ingestion pipeline",
+      "wraps": ["normalize", "extract"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Case-scoped read boundary",
+      "wraps": ["rag-agent", "sql-agent", "graph-tool", "evidence-db"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "frontend-orchestrator",
+      "from": "frontend",
+      "to": "orchestrator",
+      "label": "POST /v1/agent/invoke + SSE",
+      "variant": "emphasis"
+    },
+    {
+      "id": "orchestrator-rag",
+      "from": "orchestrator",
+      "to": "rag-agent",
+      "label": "search_evidence",
+      "labelAt": [574, 178],
+      "variant": "emphasis"
+    },
+    {
+      "id": "orchestrator-sql",
+      "from": "orchestrator",
+      "to": "sql-agent",
+      "label": "query_records",
+      "variant": "emphasis"
+    },
+    {
+      "id": "orchestrator-graph",
+      "from": "orchestrator",
+      "to": "graph-tool",
+      "label": "find_connections",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rag-db",
+      "from": "rag-agent",
+      "to": "evidence-db",
+      "label": "hybrid retrieval"
+    },
+    {
+      "id": "sql-db",
+      "from": "sql-agent",
+      "to": "evidence-db",
+      "label": "agent_read views",
+      "labelAt": [804, 318],
+      "variant": "security"
+    },
+    {
+      "id": "graph-db",
+      "from": "graph-tool",
+      "to": "evidence-db",
+      "label": "bounded graph traversal"
+    },
+    {
+      "id": "communications-normalize",
+      "from": "communications",
+      "to": "normalize"
+    },
+    {
+      "id": "financial-normalize",
+      "from": "financial",
+      "to": "normalize"
+    },
+    {
+      "id": "documents-normalize",
+      "from": "documents",
+      "to": "normalize"
+    },
+    {
+      "id": "normalize-extract",
+      "from": "normalize",
+      "to": "extract",
+      "label": "records + chunks",
+      "labelAt": [459, 600]
+    },
+    {
+      "id": "extract-db",
+      "from": "extract",
+      "to": "evidence-db",
+      "label": "persist graph",
+      "labelAt": [689, 738],
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-langfuse",
+      "from": "orchestrator",
+      "to": "langfuse",
+      "label": "agent + tool traces",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [[574, 40], [1150, 40], [1150, 554]],
+      "variant": "dashed"
+    },
+    {
+      "id": "ingestion-langfuse",
+      "from": "extract",
+      "to": "langfuse",
+      "label": "pipeline + GenAI spans",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [[574, 620], [1034, 620]],
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Ingestion",
+      "items": [
+        "Three input families cover CDR, email, bank, and document sources",
+        "Deterministic rules emit confirmed edges; the LLM proposes candidates that the application validates",
+        "Pipeline and GenAI spans are exported to Langfuse"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Orchestration",
+      "items": [
+        "One checkpointed Investigator Agent selects exactly three read-only tools",
+        "Hybrid RAG and text-to-SQL are nested agents; graph traversal is deterministic",
+        "Agent, model, and tool traces are exported to Langfuse"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Evidence graph",
+      "items": [
+        "The graph is relational: entities and relationships are stored in PostgreSQL",
+        "BM25 and vector indexes are rebuildable projections of the same evidence store"
+      ]
+    }
+  ]
+}

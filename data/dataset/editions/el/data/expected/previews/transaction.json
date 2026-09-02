@@ -1,0 +1,41 @@
+{
+  "canonical": {
+    "case_id": "case_trg_001",
+    "event_time_utc": "2026-03-05T14:30:00Z",
+    "ingested_at": "2026-03-11T00:00:00Z",
+    "normalized_payload": {
+      "amount_minor": 980000,
+      "creditor_account_entity_id": "ent_account_meridian",
+      "currency": "EUR",
+      "debtor_account_entity_id": "ent_account_aegean",
+      "original_amount_text": "9800.00"
+    },
+    "original_time_value": "2026-03-05T14:30:00Z",
+    "parser_version": "bank-parser@1",
+    "raw_content_hash": "f419e21548b2f8537c98d77f3c411006efd95eb65c4524d5e083a340d080683f",
+    "raw_object_uri": "raw/bank.sql",
+    "record_id": "case_trg_001:bank:t_88",
+    "record_type": "TRANSACTION",
+    "record_version_id": "case_trg_001:bank:t_88:v1",
+    "source_record_id": "t_88",
+    "source_system": "bank",
+    "source_version_id": "bank@1-el"
+  },
+  "raw": {
+    "amount_text": "9800.00",
+    "booking_ts_utc": "2026-03-05T14:30:00Z",
+    "case_id": "case_trg_001",
+    "creditor_bic": "TRGSGR2A",
+    "creditor_iban": "GR3601100010000000000054401",
+    "creditor_name": "Meridian Consulting Ltd",
+    "currency": "EUR",
+    "debtor_bic": "TRGSGR2A",
+    "debtor_iban": "GR9201100010000000000046118",
+    "debtor_name": "Aegean Trade OE",
+    "remittance_info": "consulting services INV-2231",
+    "source_version": "bank@1-el",
+    "status": "booked",
+    "txn_id": "t_88",
+    "value_date": "2026-03-05"
+  }
+}

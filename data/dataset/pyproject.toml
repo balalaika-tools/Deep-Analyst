@@ -1,0 +1,13 @@
+[project]
+name = "dataset"
+version = "0.1.0"
+description = "Deterministic synthetic TRG investigation dataset generator and contract tests"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[project.scripts]
+make-dataset = "dataset.main:main"
+
+[build-system]
+requires = ["hatchling>=1.32.0,<2"]
+build-backend = "hatchling.build"

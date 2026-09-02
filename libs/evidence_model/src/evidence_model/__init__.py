@@ -1,0 +1,68 @@
+"""Evidence store contract shared by ingestion and the investigation agent."""
+
+from evidence_model.drafts import EndpointRef, EntityDraft, RelationshipDraft, label_slug
+from evidence_model.ontology import (
+    ALLOWED_ENDPOINTS,
+    KEYED_ENTITY_TYPES,
+    LLM_ENTITY_TYPES,
+    LLM_PREDICATES,
+    EntityType,
+    ExtractionMethod,
+    OntologyViolation,
+    Predicate,
+    RelationshipStatus,
+    check_endpoint_types,
+    check_status_method,
+    endpoint_types_allowed,
+)
+from evidence_model.provenance import (
+    FieldLocator,
+    MissingProvenance,
+    SourceRef,
+    TextSpanLocator,
+    require_source_refs,
+)
+from evidence_model.tables import (
+    PROJECTION_TABLES,
+    AccountRow,
+    ChunkRow,
+    CommunicationRow,
+    EntityRow,
+    IngestionRunRow,
+    RecordRow,
+    RelationshipRow,
+    TransactionRow,
+)
+
+__all__ = [
+    "ALLOWED_ENDPOINTS",
+    "KEYED_ENTITY_TYPES",
+    "LLM_ENTITY_TYPES",
+    "LLM_PREDICATES",
+    "PROJECTION_TABLES",
+    "AccountRow",
+    "ChunkRow",
+    "CommunicationRow",
+    "EndpointRef",
+    "EntityDraft",
+    "EntityRow",
+    "EntityType",
+    "ExtractionMethod",
+    "FieldLocator",
+    "IngestionRunRow",
+    "MissingProvenance",
+    "OntologyViolation",
+    "Predicate",
+    "RecordRow",
+    "RelationshipDraft",
+    "RelationshipRow",
+    "RelationshipStatus",
+    "SourceRef",
+    "TextSpanLocator",
+    "TransactionRow",
+    "check_endpoint_types",
+    "check_status_method",
+    "endpoint_types_allowed",
+    "label_slug",
+    "require_source_refs",
+]

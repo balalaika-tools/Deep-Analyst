@@ -1,0 +1,12 @@
+Message-ID: <payment-20260309@meridian-consulting.example>
+From: "Meridian Consulting Ltd" <noreply@meridian-consulting.example>
+To: "Alexandros Mavridis" <alex@meridian-consulting.example>
+Date: Mon, 9 Mar 2026 09:00:00 +0200
+Subject: March fee
+Content-Type: text/plain; charset=UTF-8
+X-Case-ID: case_trg_001
+X-Source-Record-ID: eM3
+X-Source-Version: email@1-en
+
+Payment instruction for €2,500 for CONSULTING FEE 03/2026.
+The credit will appear in the designated account.

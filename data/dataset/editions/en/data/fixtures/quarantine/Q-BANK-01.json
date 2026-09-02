@@ -1,0 +1,10 @@
+{
+  "account_id": "Q-BANK-01",
+  "bic": "TRGSGR2A",
+  "case_id": "case_trg_001",
+  "holder_name": "Invalid Fixture",
+  "holder_type": "person",
+  "iban": "GR0000000000000000000000000",
+  "opened_date": "2026-02-20",
+  "source_version": "bank@1-en"
+}

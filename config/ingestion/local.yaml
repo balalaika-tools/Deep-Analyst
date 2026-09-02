@@ -1,0 +1,36 @@
+# Application-owned ingestion policy for the local environment. The deployment contract
+# (database URL, evidence bucket, AWS region, model identifiers, credentials) is
+# environment-only and documented in services/ingestion/.env.example; it never appears here.
+# An environment variable of the same SCREAMING_SNAKE_CASE name overrides a key for one run
+# (in Compose: docker compose run --rm -e LLM_MAX_IN_FLIGHT=10 ingestion).
+
+# Bedrock Titan v2 embeddings; the stored vector width must match the model output.
+embedding_dimensions: 1024
+
+# Records longer than the window are split with overlap; fixture records never are.
+chunk_window_chars: 4000
+chunk_overlap_chars: 200
+
+# Async engine pool.
+db_pool_size: 5
+db_max_overflow: 10
+db_pool_timeout_s: 30
+db_pool_pre_ping: true
+
+# Process-wide Bedrock throttle shared by extraction and embeddings, retries included.
+llm_requests_per_minute: 60
+llm_max_in_flight: 60
+llm_max_retries: 3
+llm_reasoning_effort: low
+
+# Telemetry. Metrics and logs go to the LGTM operational OTLP/HTTP receiver; the run trace
+# carries GenAI spans and goes to the GenAI receiver so it also reaches Langfuse. Application
+# log events are delivered over OTLP (the stack collects no container stdout); set
+# LOG_EXPORT=stdout for a local run outside Compose. Content capture stays off unless enabled.
+otel_service_name: ingestion
+service_version: dev
+otel_exporter_otlp_endpoint: http://lgtm:4318
+otel_exporter_otlp_traces_endpoint: http://lgtm:4328/v1/traces
+log_export: otlp
+capture_ai_content: true
+log_level: INFO

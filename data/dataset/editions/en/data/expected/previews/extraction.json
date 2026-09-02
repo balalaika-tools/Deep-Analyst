@@ -1,0 +1,35 @@
+{
+  "canonical": {
+    "case_id": "case_trg_001",
+    "event_time_utc": "2026-03-04T21:14:00Z",
+    "ingested_at": "2026-03-11T00:00:00Z",
+    "normalized_payload": {
+      "body": "leaving tomorrow, same place as last time",
+      "channel": "sms",
+      "recipient": "+306949876543",
+      "sender": "+306971234567"
+    },
+    "original_time_value": "2026-03-04T21:14:00Z",
+    "parser_version": "extraction-parser@1",
+    "raw_content_hash": "fa28f88d6a4eb97d6ff32e2e9731f471c79f1807eca24ecd398cca4bf7e21bf8",
+    "raw_object_uri": "raw/extraction.jsonl",
+    "record_id": "case_trg_001:extraction:X-204",
+    "record_type": "MESSAGE",
+    "record_version_id": "case_trg_001:extraction:X-204:v1",
+    "source_record_id": "X-204",
+    "source_system": "extraction",
+    "source_version_id": "extraction@1-en"
+  },
+  "raw": {
+    "app": "sms",
+    "body": "leaving tomorrow, same place as last time",
+    "case_id": "case_trg_001",
+    "direction": "out",
+    "imei": "356923107744818",
+    "msg_id": "X-204",
+    "peer": "+306949876543",
+    "source_version": "extraction@1-en",
+    "subscriber_msisdn": "+306971234567",
+    "ts_utc": "2026-03-04T21:14:00Z"
+  }
+}

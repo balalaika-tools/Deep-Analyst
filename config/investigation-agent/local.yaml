@@ -1,0 +1,67 @@
+# Application-owned investigation policy for the local environment. Deployment coordinates,
+# credentials, and model IDs are environment-only and never belong here.
+
+# Purpose-specific PostgreSQL pools and bounded acquisition/lifecycle deadlines.
+reader_pool_min_size: 1
+reader_pool_max_size: 5
+writer_pool_min_size: 1
+writer_pool_max_size: 5
+pool_acquire_timeout_s: 5.0
+readiness_timeout_s: 5.0
+shutdown_timeout_s: 30.0
+
+# Turn, provider, and evidence-operation deadlines.
+turn_timeout_s: 120.0
+model_timeout_s: 45.0
+tool_timeout_s: 30.0
+
+# Physical retry policy. Semantic retries remain owned by the tactical agents.
+model_retry_attempts: 3
+tool_retry_attempts: 3
+retry_initial_delay_s: 0.25
+retry_backoff_factor: 2.0
+retry_max_delay_s: 4.0
+retry_jitter: true
+
+# Hard per-turn call limits enforced by LangChain limit middleware on the main agent and on each
+# nested tool agent, the non-waivable closure reserve, and the evidence-index bound.
+main_model_call_limit: 20
+main_tool_call_limit: 12
+nested_model_call_limit: 6
+nested_tool_call_limit: 3
+closure_model_calls: 1
+max_physical_attempts: 40
+max_evidence_cards: 200
+max_retrieved_rows: 256
+max_query_rows: 100
+max_result_bytes: 1000000
+max_graph_paths: 50
+max_context_tokens: 32000
+max_answer_chars: 16000
+
+# Deterministic hybrid retrieval and graph traversal bounds.
+lexical_weight: 0.5
+vector_weight: 0.5
+reciprocal_rank_constant: 60
+retrieval_top_k: 20
+graph_max_depth: 4
+graph_max_nodes: 100
+graph_max_edges: 200
+
+# Product-history and public SSE bounds.
+max_history_turns: 50
+history_page_size: 20
+history_max_page_size: 100
+sse_heartbeat_s: 15.0
+sse_chunk_chars: 512
+
+# Model behavior and telemetry policy. Content capture is deliberately disabled.
+model_temperature: 0.0
+model_reasoning_effort: low
+otel_service_name: investigation-agent
+service_version: dev
+otel_exporter_otlp_endpoint: http://lgtm:4318
+otel_exporter_otlp_traces_endpoint: http://lgtm:4328/v1/traces
+log_export: otlp
+capture_ai_content: false
+log_level: INFO

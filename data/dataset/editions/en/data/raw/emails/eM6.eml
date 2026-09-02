@@ -1,0 +1,12 @@
+Message-ID: <ride-20260304@atticataxi.example>
+From: "Attica Taxi receipt service" <receipts@atticataxi.example>
+To: "A. Mavridis" <alex@meridian-consulting.example>
+Date: Fri, 6 Mar 2026 10:00:00 +0200
+Subject: Trip receipt
+Content-Type: text/plain; charset=UTF-8
+X-Case-ID: case_trg_001
+X-Source-Record-ID: eM6
+X-Source-Version: email@1-en
+
+Trip on 4 March 2026. Driver: G. Papadakis, telephone +30 693 000 0102.
+The receipt concerns an ordinary taxi service.

@@ -1,0 +1,62 @@
+# Version control and editor files
+.git
+.github
+.idea
+.vscode
+.DS_Store
+.agents
+.claude
+.codex
+openspec
+wiki
+deprecated
+docs
+*.pdf
+
+# Local Python environment; keep .python-version in the build context.
+.venv
+
+# Generated Python and tool state
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+.coverage
+.coverage.*
+htmlcov
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Build and runtime artifacts
+build
+dist
+**/.next
+**/node_modules
+**/test-results
+**/*.tsbuildinfo
+*.log
+logs
+tmp
+
+# Local secrets and local state
+.env
+.env.*
+!.env.example
+data/indexes
+
+# Not required by the production package build. The dataset is mounted at runtime,
+# but its pyproject.toml stays in the context so the locked workspace validates.
+**/tests
+data/dataset/editions
+data/dataset/variants
+data/dataset/src
+data/dataset/README.md
+config
+scripts
+
+# Container-development files are not copied into image layers.
+.pre-commit-config.yaml
+**/Dockerfile*
+compose*.yml
+compose*.yaml
+docker-compose*.yml

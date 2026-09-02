@@ -1,0 +1,65 @@
+{
+  "approximate_reference_matching": {
+    "amount_tolerance_minor": 50000,
+    "date_tolerance_days": 1,
+    "require_named_counterparty_when_present": true,
+    "require_same_currency": true,
+    "result_status": "candidate_only"
+  },
+  "identity_resolution": {
+    "authoritative_actor_key_rules": [],
+    "conflict_action": "review",
+    "cross_script_name_only": "review",
+    "exact_same_type_asset": "auto",
+    "feature_aggregation": "weighted_sum_clamped_0_1",
+    "feature_weights": {
+      "compatible_temporal_context": 0.1,
+      "explicit_alias_assertion": 0.3,
+      "independent_source_corroboration": 0.15,
+      "normalized_full_name_similarity": 0.45
+    },
+    "score_semantics": "ranking_feature_not_probability",
+    "scorer_version": "actor-resolution-score@1",
+    "shared_iban_person_or_org_merge": "never",
+    "shared_phone_person_merge": "never",
+    "theta_auto": 0.9,
+    "theta_min": 0.65,
+    "tier2_min_independent_corroborators": 2,
+    "transliteration_rules_version": "el-latin@1"
+  },
+  "policy_version": "trg-policy-v1.0.0",
+  "reconciliation": {
+    "ambiguous_candidate_action": "abstain",
+    "normalize_device_direction_to_network_roles": true,
+    "require_compatible_imei_or_subscriber": true,
+    "require_same_sender_recipient": true,
+    "timestamp_tolerance_seconds": 90
+  },
+  "screening": {
+    "comms_before_transfer": {
+      "allowed_identity_statuses": [
+        "confirmed"
+      ],
+      "authorship_semantics": "attributed_endpoints_not_proven_person_authorship",
+      "count_distinct_canonical_events": true,
+      "directions": "either",
+      "group_by": "resolved_actor_pair",
+      "lookback_hours": 24,
+      "minimum_events": 2,
+      "minimum_transfer_minor": 900000,
+      "paired_record_collapse": "SAME_EVENT_AS"
+    },
+    "structuring_sub_threshold": {
+      "currency": "EUR",
+      "group_by": "debtor_entity",
+      "lower_bound_minor": 900000,
+      "minimum_count": 3,
+      "require_activity_each_business_day": true,
+      "statuses": [
+        "booked"
+      ],
+      "threshold_minor": 1000000,
+      "window_business_days": 3
+    }
+  }
+}
