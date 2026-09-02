@@ -31,16 +31,36 @@ function renderSidebar(overrides: { active?: boolean; cursor?: string | null } =
 describe("ThreadSidebar", () => {
   it("links conversations using only thread identity", () => {
     renderSidebar();
-    expect(screen.getByRole("link", { name: /^conversation thread-1/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^investigation 1/i })).toHaveAttribute(
       "href",
       "/threads/thread-1",
     );
     expect(screen.getByRole("link", { name: "New conversation" })).toHaveAttribute("href", "/");
   });
 
+  it("numbers investigations in their displayed order", () => {
+    render(
+      <ThreadSidebar
+        activeThreadId={null}
+        activeTurn={false}
+        loadingMore={false}
+        nextCursor={null}
+        onDelete={vi.fn()}
+        onLoadMore={vi.fn()}
+        threads={[
+          thread,
+          { ...thread, thread_id: "thread-2", turn_id: "turn-2" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Investigation 1")).toBeVisible();
+    expect(screen.getByText("Investigation 2")).toBeVisible();
+  });
+
   it("disables deletion for the actively streaming thread", () => {
     renderSidebar({ active: true });
-    expect(screen.getByRole("button", { name: "Delete conversation thread-1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete Investigation 1" })).toBeDisabled();
   });
 
   it("loads another cursor page only on request", async () => {

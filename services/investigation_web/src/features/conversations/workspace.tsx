@@ -7,6 +7,7 @@ import { CloseIcon, MenuIcon } from "@/components/icons";
 import { deleteThread, loadMessages, loadThreads } from "@/features/investigations/browser-api";
 import { InvocationProblem, InvocationTransportError, invokeInvestigation } from "@/features/investigations/client";
 import type { InvokeRequest, MessagePage, ThreadPage, ThreadSummary } from "@/features/investigations/contracts";
+import { threadLabel } from "@/features/threads/thread-label";
 import { ProtocolError } from "@/features/investigations/protocol";
 import { ThreadSidebar } from "@/features/threads/thread-sidebar";
 import { mergeMessages, mergeThreads } from "./collections";
@@ -41,6 +42,8 @@ function ConversationWorkspaceState({
   const [loadingThreads, setLoadingThreads] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ThreadSummary | null>(null);
+  const activeThreadIndex = threads.findIndex((thread) => thread.thread_id === currentThreadId);
+  const conversationTitle = activeThreadIndex >= 0 ? threadLabel(activeThreadIndex) : "New investigation";
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -58,7 +61,7 @@ function ConversationWorkspaceState({
     if (deleteTarget) dialogCancelRef.current?.focus();
   }, [deleteTarget]);
 
-  async function refreshHistory(targetThreadId: string, requestId: string): Promise<boolean> {
+  async function refreshHistory(targetThreadId: string): Promise<void> {
     const [threadPage, messagePage] = await Promise.all([
       loadThreads(),
       loadMessages(targetThreadId),
@@ -67,22 +70,11 @@ function ConversationWorkspaceState({
     setThreadCursor(threadPage.next_cursor);
     setMessages(messagePage.items);
     setMessageCursor(messagePage.next_cursor);
-    return messagePage.items.some((message) => message.request_id === requestId);
   }
 
-  async function reconcile(
-    targetThreadId: string,
-    requestId: string,
-    resetWhenPersisted: boolean,
-  ): Promise<void> {
+  async function reconcile(targetThreadId: string): Promise<void> {
     try {
-      const persisted = await refreshHistory(targetThreadId, requestId);
-      if (persisted && resetWhenPersisted) dispatch({ type: "reset" });
-      if (persisted) {
-        router.replace(`/threads/${encodeURIComponent(targetThreadId)}`, { scroll: false });
-      } else {
-        router.refresh();
-      }
+      await refreshHistory(targetThreadId);
     } catch {
       // The provisional state remains visible until a later manual navigation or retry.
     }
@@ -96,7 +88,7 @@ function ConversationWorkspaceState({
     let displayDeltaIndex = 0;
 
     try {
-      const terminal = await invokeInvestigation(payload, {
+      await invokeInvestigation(payload, {
         signal: controller.signal,
         onEvent: (event) => displayStreamEvent(
           event,
@@ -105,11 +97,11 @@ function ConversationWorkspaceState({
           controller.signal,
         ),
       });
-      await reconcile(payload.thread_id, payload.request_id, terminal.event === "run.completed");
+      await reconcile(payload.thread_id);
     } catch (error) {
       if (controller.signal.aborted) {
         dispatch({ type: "cancelled" });
-        await reconcile(payload.thread_id, payload.request_id, false);
+        await reconcile(payload.thread_id);
       } else if (error instanceof InvocationProblem) {
         dispatch({
           type: "transport-failed",
@@ -125,7 +117,7 @@ function ConversationWorkspaceState({
           type: "uncertain",
           message: "The connection ended unexpectedly. Saved history is being checked.",
         });
-        await reconcile(payload.thread_id, payload.request_id, false);
+        await reconcile(payload.thread_id);
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -137,6 +129,7 @@ function ConversationWorkspaceState({
     const targetThreadId = currentThreadId ?? crypto.randomUUID();
     if (!currentThreadId) {
       setCurrentThreadId(targetThreadId);
+      window.history.replaceState(null, "", `/threads/${encodeURIComponent(targetThreadId)}`);
     }
     void runAttempt({
       request_id: crypto.randomUUID(),
@@ -242,7 +235,7 @@ function ConversationWorkspaceState({
           ><MenuIcon /></button>
           <div className="case-title">
             <span className="eyebrow">Deep Analyst</span>
-            <h1 id="conversation-title">Conversation</h1>
+            <h1 id="conversation-title">{conversationTitle}</h1>
           </div>
           <div className="case-status"><span className="online-dot" /> Agent ready</div>
         </header>

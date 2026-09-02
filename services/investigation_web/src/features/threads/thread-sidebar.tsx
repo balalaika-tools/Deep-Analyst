@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { PlusIcon, TrashIcon } from "@/components/icons";
 import type { ThreadSummary } from "@/features/investigations/contracts";
+import { threadLabel } from "./thread-label";
 
 interface ThreadSidebarProps {
   threads: ThreadSummary[];
@@ -60,18 +61,19 @@ export function ThreadSidebar({
           </div>
         ) : (
           <ul className="thread-list">
-            {threads.map((thread) => {
+            {threads.map((thread, index) => {
               const active = thread.thread_id === activeThreadId;
+              const label = threadLabel(index);
               return (
                 <li className="thread-row" key={thread.thread_id}>
                   <Link
                     aria-current={active ? "page" : undefined}
-                    aria-label={`Conversation ${thread.thread_id} ${DATE_FORMAT.format(new Date(thread.created_at))} ${thread.status}`}
+                    aria-label={`${label} ${DATE_FORMAT.format(new Date(thread.created_at))} ${thread.status}`}
                     className={`thread-link${active ? " is-active" : ""}`}
                     href={`/threads/${encodeURIComponent(thread.thread_id)}`}
                     onClick={onNavigate}
                   >
-                    <span className="thread-case">Conversation</span>
+                    <span className="thread-case">{label}</span>
                     <span className="thread-meta">
                       <time dateTime={thread.created_at}>{DATE_FORMAT.format(new Date(thread.created_at))}</time>
                       <span className={`status-dot status-${thread.status}`} aria-hidden="true" />
@@ -79,7 +81,7 @@ export function ThreadSidebar({
                     </span>
                   </Link>
                   <button
-                    aria-label={`Delete conversation ${thread.thread_id}`}
+                    aria-label={`Delete ${label}`}
                     className="thread-delete"
                     disabled={active && activeTurn}
                     onClick={() => onDelete(thread)}

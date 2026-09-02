@@ -42,11 +42,6 @@ REFUSAL_TEXT = {
         "I can only help with investigation questions about this case."
     ),
 }
-GUARDRAIL_UNAVAILABLE_TEXT = (
-    "The request could not be checked by the safety filter right now. Please try again."
-)
-
-
 type InputGuardrailModel = Callable[[str], Awaitable[InputGuardrailVerdict]]
 type EvidenceGuardrailModel = Callable[
     [tuple[tuple[str, str], ...]], Awaitable[EvidenceGuardrailVerdict]
@@ -166,9 +161,7 @@ class InputGuardrailMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
             with phase_span("input_guardrail"):
                 verdict = await self._evaluator(turn.utterance, runtime.context)
         except GuardrailUnavailableError:
-            return _refuse(
-                parsed, turn, status="guardrail_unavailable", text=GUARDRAIL_UNAVAILABLE_TEXT
-            )
+            return _fail_guardrail(turn)
         if verdict.status is InputGuardrailStatus.ALLOWED:
             return state_update(turn=turn.model_copy(update={"guardrail_status": "allowed"}))
         return _refuse(parsed, turn, status=verdict.status.value, text=REFUSAL_TEXT[verdict.status])
@@ -189,6 +182,19 @@ def _refuse(
             "guardrail_status": status,
             "answer_kind": "refusal",
             "pending_answer": text,
+            "pending_citations": (),
+        }
+    )
+    return {**state_update(turn=updated), "jump_to": "end"}
+
+
+def _fail_guardrail(turn: TurnState) -> dict[str, Any]:
+    updated = turn.model_copy(
+        update={
+            "guardrail_status": "guardrail_unavailable",
+            "safe_failure_code": "guardrail_unavailable",
+            "answer_kind": None,
+            "pending_answer": None,
             "pending_citations": (),
         }
     )
@@ -266,7 +272,6 @@ def _normalized_evidence(item: EvidenceItem, text: str, suspicious: bool) -> Nor
 
 
 __all__ = [
-    "GUARDRAIL_UNAVAILABLE_TEXT",
     "REFUSAL_TEXT",
     "EvidenceGuardrailModel",
     "GuardrailEvaluator",

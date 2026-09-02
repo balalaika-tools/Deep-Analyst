@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   InvestigationEvent,
@@ -9,21 +9,22 @@ import type {
 } from "@/features/investigations/contracts";
 import { ConversationWorkspace } from "./workspace";
 
-const { push, refresh, deleteThread, invokeInvestigation } = vi.hoisted(() => ({
+const { push, deleteThread, invokeInvestigation, loadMessages, loadThreads } = vi.hoisted(() => ({
   push: vi.fn(),
-  refresh: vi.fn(),
   deleteThread: vi.fn(),
   invokeInvestigation: vi.fn(),
+  loadMessages: vi.fn(),
+  loadThreads: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/investigations/browser-api", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/investigations/browser-api")>();
   return {
     ...original,
     deleteThread,
-    loadThreads: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
-    loadMessages: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+    loadThreads,
+    loadMessages,
   };
 });
 vi.mock("@/features/investigations/client", async (importOriginal) => {
@@ -49,11 +50,16 @@ function renderWorkspace() {
 }
 
 describe("ConversationWorkspace deletion", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     push.mockReset();
-    refresh.mockReset();
     deleteThread.mockReset();
     invokeInvestigation.mockReset();
+    loadThreads.mockReset();
+    loadThreads.mockResolvedValue({ items: [], next_cursor: null });
+    loadMessages.mockReset();
+    loadMessages.mockResolvedValue({ items: [], next_cursor: null });
   });
 
   it("removes an active thread only after confirmed successful deletion", async () => {
@@ -61,7 +67,7 @@ describe("ConversationWorkspace deletion", () => {
     deleteThread.mockResolvedValue(undefined);
     renderWorkspace();
 
-    await user.click(screen.getAllByRole("button", { name: "Delete conversation thread-1" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "Delete Investigation 1" })[0]!);
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(deleteThread).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Delete" }));
@@ -75,7 +81,7 @@ describe("ConversationWorkspace deletion", () => {
     const user = userEvent.setup();
     deleteThread.mockRejectedValue(new Error("The conversation could not be deleted."));
     renderWorkspace();
-    await user.click(screen.getAllByRole("button", { name: "Delete conversation thread-1" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "Delete Investigation 1" })[0]!);
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be deleted");
@@ -85,7 +91,7 @@ describe("ConversationWorkspace deletion", () => {
   it("closes confirmation without sending a request", async () => {
     const user = userEvent.setup();
     renderWorkspace();
-    await user.click(screen.getAllByRole("button", { name: "Delete conversation thread-1" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "Delete Investigation 1" })[0]!);
     await user.click(screen.getByRole("button", { name: "Keep conversation" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(deleteThread).not.toHaveBeenCalled();
@@ -149,5 +155,80 @@ describe("ConversationWorkspace deletion", () => {
       message: requests[0]?.message,
     });
     expect(requests[1]?.request_id).not.toBe(requests[0]?.request_id);
+  });
+
+  it("keeps the completed streamed response mounted while history reconciles", async () => {
+    const user = userEvent.setup();
+    loadMessages.mockImplementation(async () => ({
+      items: [
+        {
+          message_id: "user-message",
+          sequence: 1,
+          turn_id: "turn-complete",
+          request_id: "request-complete",
+          role: "user",
+          content: "Investigate",
+          citations: [],
+          turn_status: "completed",
+          created_at: "2026-09-02T12:00:00Z",
+        },
+        {
+          message_id: "assistant-message",
+          sequence: 2,
+          turn_id: "turn-complete",
+          request_id: "request-complete",
+          role: "assistant",
+          content: "Persisted answer",
+          citations: [],
+          turn_status: "completed",
+          created_at: "2026-09-02T12:00:01Z",
+        },
+      ],
+      next_cursor: null,
+    }));
+    invokeInvestigation.mockImplementation(
+      async (
+        request: InvokeRequest,
+        options: { onEvent: (event: InvestigationEvent) => void | Promise<void> },
+      ) => {
+        const base = {
+          schema_version: 1 as const,
+          thread_id: request.thread_id,
+          turn_id: "turn-complete",
+          timestamp: "2026-09-02T12:00:00Z",
+        };
+        await options.onEvent({ ...base, event: "run.started", data: { status: "running" } });
+        await options.onEvent({
+          ...base,
+          event: "answer.delta",
+          data: { index: 0, text: "Streamed answer" },
+        });
+        const completed = {
+          ...base,
+          event: "run.completed" as const,
+          data: { message_id: "assistant-message", citations: [], status: "completed" as const },
+        };
+        await options.onEvent(completed);
+        return completed;
+      },
+    );
+    vi.spyOn(crypto, "randomUUID").mockReturnValueOnce("thread-new").mockReturnValueOnce("request-complete");
+    const historyReplace = vi.spyOn(window.history, "replaceState");
+    render(
+      <ConversationWorkspace
+        initialMessages={{ items: [], next_cursor: null }}
+        initialThreads={{ items: [], next_cursor: null }}
+        threadId={null}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Message the investigation agent"), "Investigate");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText("Streamed answer")).toBeVisible();
+    await waitFor(() => expect(loadMessages).toHaveBeenCalledWith("thread-new"));
+    expect(screen.queryByText("Persisted answer")).not.toBeInTheDocument();
+    expect(screen.getByText("Streamed answer")).toBeVisible();
+    expect(historyReplace).toHaveBeenCalledWith(null, "", "/threads/thread-new");
   });
 });

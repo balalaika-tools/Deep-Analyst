@@ -183,7 +183,7 @@ async def test_greeting_is_refused_immediately_without_model_calls(support: Any)
 
 
 @pytest.mark.asyncio
-async def test_guardrail_unavailable_fails_closed_without_evidence_io(support: Any) -> None:
+async def test_guardrail_unavailable_fails_turn_without_publishing_an_answer(support: Any) -> None:
     from investigation_agent.genai.guardrails.middleware import GuardrailUnavailableError
 
     async def unavailable(utterance: str, context: RuntimeContext) -> None:
@@ -196,7 +196,10 @@ async def test_guardrail_unavailable_fails_closed_without_evidence_io(support: A
 
     assert harness.model.calls == 0 and harness.behaviour.calls == []
     assert state.turn is not None and state.turn.guardrail_status == "guardrail_unavailable"
-    assert state.turn.status is TurnStatus.COMPLETED and state.turn.answer_kind == "refusal"
+    assert state.turn.status is TurnStatus.FAILED
+    assert state.turn.safe_failure_code == "guardrail_unavailable"
+    assert state.turn.answer_kind is None and state.turn.pending_answer is None
+    assert all(message.role is not HistoryRole.ASSISTANT for message in state.history.messages)
 
 
 @pytest.mark.asyncio

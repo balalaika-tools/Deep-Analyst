@@ -11,13 +11,13 @@ readiness_timeout_s: 5.0
 shutdown_timeout_s: 30.0
 
 # Turn, provider, and evidence-operation deadlines.
-turn_timeout_s: 120.0
-model_timeout_s: 45.0
-tool_timeout_s: 30.0
+turn_timeout_s: 240.0
+model_timeout_s: 60.0
+tool_timeout_s: 45.0
 
 # Physical retry policy. Semantic retries remain owned by the tactical agents.
-model_retry_attempts: 3
-tool_retry_attempts: 3
+model_retry_attempts: 5
+tool_retry_attempts: 5
 retry_initial_delay_s: 0.25
 retry_backoff_factor: 2.0
 retry_max_delay_s: 4.0
@@ -25,12 +25,12 @@ retry_jitter: true
 
 # Hard per-turn call limits enforced by LangChain limit middleware on the main agent and on each
 # nested tool agent, the non-waivable closure reserve, and the evidence-index bound.
-main_model_call_limit: 20
-main_tool_call_limit: 12
-nested_model_call_limit: 6
+main_model_call_limit: 32
+main_tool_call_limit: 20
+nested_model_call_limit: 10
 nested_tool_call_limit: 3
 closure_model_calls: 1
-max_physical_attempts: 40
+max_physical_attempts: 80
 max_evidence_cards: 200
 max_retrieved_rows: 256
 max_query_rows: 100

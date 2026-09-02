@@ -66,6 +66,7 @@ function CitationList({ citations }: { citations: Citation[] }) {
 function Message({ message }: { message: MessageItem }) {
   const assistant = message.role === "assistant";
   const completedAnswer = assistant && message.turn_status === "completed";
+  const verifiedAnswer = completedAnswer && message.citations.length > 0;
   const titleId = `answer-${message.message_id}`;
   return (
     <article
@@ -77,8 +78,8 @@ function Message({ message }: { message: MessageItem }) {
       <div className="message-body">
         {completedAnswer ? (
           <div className="answer-header">
-            <h2 id={titleId}>Verified response</h2>
-            <span className="verified-badge"><span aria-hidden="true">✓</span> Evidence checked</span>
+            <h2 id={titleId}>{verifiedAnswer ? "Verified response" : "Response"}</h2>
+            {verifiedAnswer ? <span className="verified-badge"><span aria-hidden="true">✓</span> Evidence checked</span> : null}
           </div>
         ) : null}
         <div className="message-copy">
@@ -124,7 +125,11 @@ export function MessageList({ messages, turn, nextCursor, loadingMore, onLoadMor
   const activeRequestId = turn.payload?.request_id;
   const showPendingUser = turn.payload && turn.phase !== "idle" && !messages.some((item) => item.request_id === turn.payload?.request_id);
   const showAssistant = turn.answer.length > 0;
+  const verifiedStreamedAnswer = turn.phase === "completed" && turn.citations.length > 0;
   const showActivity = active && !showAssistant;
+  const visibleMessages = showAssistant
+    ? messages.filter((message) => message.request_id !== turn.payload?.request_id)
+    : messages;
 
   useEffect(() => {
     if (!active) return;
@@ -141,7 +146,7 @@ export function MessageList({ messages, turn, nextCursor, loadingMore, onLoadMor
           {loadingMore ? "Loading history…" : "Load older messages"}
         </button>
       ) : null}
-      {messages.length === 0 && !showPendingUser ? (
+      {visibleMessages.length === 0 && !showPendingUser ? (
         <section className="conversation-empty">
           <span className="empty-spark"><SparkIcon /></span>
           <span className="eyebrow">Case intelligence</span>
@@ -149,7 +154,7 @@ export function MessageList({ messages, turn, nextCursor, loadingMore, onLoadMor
           <p>Ask about entities, records, transactions, or connections. Answers are released only after evidence verification.</p>
         </section>
       ) : null}
-      {messages.map((message) => <Message key={message.message_id} message={message} />)}
+      {visibleMessages.map((message) => <Message key={message.message_id} message={message} />)}
       {showPendingUser ? (
         <article className="message message-user is-pending" aria-label="Pending user message">
           <div className="message-body"><div className="message-copy">{turn.payload?.message}</div><div className="message-footer">Sending…</div></div>
@@ -162,8 +167,8 @@ export function MessageList({ messages, turn, nextCursor, loadingMore, onLoadMor
           <div className="message-body">
             {turn.phase === "completed" ? (
               <div className="answer-header">
-                <h2>Verified response</h2>
-                <span className="verified-badge"><span aria-hidden="true">✓</span> Evidence checked</span>
+                <h2>{verifiedStreamedAnswer ? "Verified response" : "Response"}</h2>
+                {verifiedStreamedAnswer ? <span className="verified-badge"><span aria-hidden="true">✓</span> Evidence checked</span> : null}
               </div>
             ) : null}
             <div className="message-copy">

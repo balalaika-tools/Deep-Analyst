@@ -55,7 +55,7 @@ def test_precedence_is_constructor_then_environment_then_dotenv_yaml_and_default
     ("name", "value", "expected_field"),
     [
         pytest.param("READER_POOL_MIN_SIZE", "6", "READER_POOL_MIN_SIZE", id="pool-order"),
-        pytest.param("MODEL_TIMEOUT_S", "121", "MODEL_TIMEOUT_S", id="deadline-order"),
+        pytest.param("MODEL_TIMEOUT_S", "241", "MODEL_TIMEOUT_S", id="deadline-order"),
         pytest.param("RETRY_INITIAL_DELAY_S", "5", "RETRY_INITIAL_DELAY_S", id="retry-order"),
         pytest.param("CLOSURE_MODEL_CALLS", "20", "CLOSURE_MODEL_CALLS", id="reserve"),
         pytest.param("NESTED_TOOL_CALL_LIMIT", "4", "NESTED_TOOL_CALL_LIMIT", id="nested-tools"),

@@ -94,6 +94,8 @@ describe("MessageList", () => {
     expect(screen.getByText("account-77", { selector: "code" })).toBeVisible();
     expect(screen.getByText("<script>alert('unsafe')</script>")).toBeVisible();
     expect(container.querySelector("script")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Response" })).toBeVisible();
+    expect(screen.queryByText("Evidence checked")).not.toBeInTheDocument();
   });
 
   it("shows immediate activity and replaces its label with streamed progress", () => {
