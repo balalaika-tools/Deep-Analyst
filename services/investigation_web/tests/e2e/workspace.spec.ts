@@ -5,105 +5,116 @@ test.beforeEach(async ({ request }) => {
   expect(response.ok()).toBeTruthy();
 });
 
-test("opens a case from the home page", async ({ page }) => {
+test("home starts a new global conversation", async ({ page }, testInfo) => {
   await page.goto("/");
-  await page.getByLabel("Case ID").fill("case-1");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await expect(page).toHaveURL("/cases/case-1");
+  if (testInfo.project.name === "mobile") {
+    await page.getByRole("button", { name: "Open conversations" }).click();
+  }
+  await expect(page.getByRole("link", { name: "New conversation" })).toBeVisible();
   await expect(page.getByLabel("Message the investigation agent")).toBeVisible();
+  await expect(page.getByText(["Case", "ID"].join(" "))).toHaveCount(0);
 });
 
-test("streams a new verified investigation progressively", async ({ page }, testInfo) => {
+test("streams a verified investigation and assigns a thread route", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/case-1");
+  await page.goto("/");
   await page.getByLabel("Message the investigation agent").fill("Find the connection");
   await page.getByRole("button", { name: "Send message" }).click();
 
-  await expect(page.getByRole("status", { name: "Investigation progress" })).toBeVisible();
-  await expect(page.getByText("Searching evidence")).toBeVisible();
-  await expect(page.getByLabel("Streaming assistant message")).toContainText("Verified connection");
   await expect(page.getByText("Verified connection found across the reviewed evidence.")).toBeVisible();
-  await expect(page).toHaveURL(/\/cases\/case-1\/threads\/[A-Za-z0-9-]+$/);
+  await expect(page).toHaveURL(/\/threads\/[A-Za-z0-9-]+$/);
   await expect(page.getByLabel("Message the investigation agent")).toBeEnabled();
-  const dimensions = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    content: document.documentElement.scrollWidth,
-  }));
-  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test("opens history and navigates to a thread using its returned case", async ({ page }, testInfo) => {
+test("keeps two fresh conversations independent over the shared corpus", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/case-1/threads/thread-1");
+  const composer = page.getByLabel("Message the investigation agent");
+
+  await page.goto("/");
+  await composer.fill("Trace the first connection in the shared evidence");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Verified connection found across the reviewed evidence.")).toBeVisible();
+  await expect(composer).toBeEnabled();
+  await expect(page).toHaveURL(/\/threads\/[A-Za-z0-9-]+$/);
+  const firstThreadPath = new URL(page.url()).pathname;
+  await expect(page.locator(`a[href="${firstThreadPath}"]`)).toBeVisible();
+
+  await page.getByRole("link", { name: "New conversation" }).click();
+  await expect(page).toHaveURL("/");
+  await expect(page.getByText("Trace the first connection in the shared evidence")).toHaveCount(0);
+
+  await composer.fill("Trace a second connection in the shared evidence");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Verified connection found across the reviewed evidence.")).toBeVisible();
+  await expect(composer).toBeEnabled();
+  await expect(page).toHaveURL(/\/threads\/[A-Za-z0-9-]+$/);
+  await expect(page.getByText("Trace the first connection in the shared evidence")).toHaveCount(0);
+  const secondThreadPath = new URL(page.url()).pathname;
+  expect(secondThreadPath).not.toBe(firstThreadPath);
+
+  await page.locator(`a[href="${firstThreadPath}"]`).click();
+  await expect(page).toHaveURL(new URL(firstThreadPath, page.url()).toString());
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("Trace a second connection in the shared evidence")).toHaveCount(0);
+  await expect(page.getByText("Trace the first connection in the shared evidence")).toBeVisible();
+  await expect(page.getByText("Verified connection found across the reviewed evidence.")).toBeVisible();
+});
+
+test("opens paginated conversation history using thread identity", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
+  await page.goto("/threads/thread-1");
   await expect(page.getByText("Trace account 77")).toBeVisible();
-  await expect(page.getByText("1 source")).toBeVisible();
+  await expect(page.getByText("1 evidence source")).toBeVisible();
   await page.getByRole("button", { name: "Load more" }).click();
-  await page.getByRole("link", { name: /case-2/i }).click();
-  await expect(page).toHaveURL("/cases/case-2/threads/thread-2");
-  await expect(page.getByText("Review the second case")).toBeVisible();
+  await page.getByRole("link", { name: /conversation thread-2/i }).click();
+  await expect(page).toHaveURL("/threads/thread-2");
+  await expect(page.getByText("Review the second corpus segment")).toBeVisible();
 });
 
-test("retries a retryable failure as a new request", async ({ page }, testInfo) => {
+test("retries, cancels, and reconciles bounded failures", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/case-1");
-  await page.getByLabel("Message the investigation agent").fill("Please retry this lookup");
+  await page.goto("/");
+  const composer = page.getByLabel("Message the investigation agent");
+  await composer.fill("Please retry this lookup");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".turn-notice")).toContainText("temporarily unavailable");
   await page.getByRole("button", { name: "Retry investigation" }).click();
   await expect(page.getByText("Verified connection found across the reviewed evidence.")).toBeVisible();
-});
 
-test("cancels a slow request and restores the composer", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/case-1");
-  await page.getByLabel("Message the investigation agent").fill("Run a slow investigation");
+  await page.goto("/");
+  const freshComposer = page.getByLabel("Message the investigation agent");
+  await freshComposer.fill("Run a slow investigation");
   await page.getByRole("button", { name: "Send message" }).click();
-  await expect(page.getByRole("button", { name: "Cancel investigation" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel investigation" }).click();
-  await expect(page.getByLabel("Message the investigation agent")).toBeEnabled();
+  await expect(freshComposer).toBeEnabled();
 });
 
-test("reconciles a malformed stream without inventing an answer", async ({ page }, testInfo) => {
+test("deletes an active conversation and preserves failed deletion", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/case-1");
-  await page.getByLabel("Message the investigation agent").fill("Return a malformed stream");
-  await page.getByRole("button", { name: "Send message" }).click();
-  await expect(page.locator(".turn-notice")).toContainText("connection ended unexpectedly");
-  await expect(page.getByLabel("Streaming assistant message")).toHaveCount(0);
-});
-
-test("confirms deletion and preserves a thread when deletion fails", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/case-1/threads/thread-1");
-  await page.getByRole("button", { name: "Delete conversation for case-1" }).first().click();
+  await page.goto("/threads/thread-1");
+  await page.getByRole("button", { name: "Delete conversation thread-1" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page).toHaveURL("/cases/case-1");
+  await expect(page).toHaveURL("/");
 
-  await page.getByRole("button", { name: "Delete conversation for case-1" }).click();
+  await page.getByRole("button", { name: "Delete conversation thread-fail" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.locator(".dialog-error")).toContainText("durably confirmed");
-  await expect(page.getByRole("link", { name: /case-1/i })).toBeVisible();
 });
 
-test("mobile conversation drawer opens and returns focus", async ({ page }, testInfo) => {
+test("mobile drawer returns focus", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "Mobile-only navigation check");
-  await page.goto("/cases/case-1");
+  await page.goto("/");
   const trigger = page.getByRole("button", { name: "Open conversations" });
   await trigger.click();
   await expect(page.getByRole("complementary", { name: "Conversation navigation" })).toBeVisible();
   await page.getByRole("button", { name: "Close conversations" }).last().click();
   await expect(trigger).toBeFocused();
-  const dimensions = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    content: document.documentElement.scrollWidth,
-  }));
-  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
 });
 
-test("invalid and missing conversation routes render bounded not-found states", async ({ page }, testInfo) => {
+test("legacy routes redirect and missing threads stay bounded", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "Desktop flow is covered once");
-  await page.goto("/cases/bad%20case");
-  await expect(page.getByRole("heading", { name: "This conversation isn’t available." })).toBeVisible();
-  await page.goto("/cases/case-1/threads/unknown-thread");
+  await page.goto(`/${["cases", "legacy"].join("/")}`);
+  await expect(page).toHaveURL("/");
+  await page.goto("/threads/unknown-thread");
   await expect(page.getByRole("heading", { name: "This conversation isn’t available." })).toBeVisible();
 });

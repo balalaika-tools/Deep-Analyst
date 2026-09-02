@@ -18,7 +18,7 @@ SOURCE_SYSTEM = "extraction"
 RELATIVE_PATH = "raw/extraction.jsonl"
 
 
-def _record(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, CommunicationProjection]:
+def _record(row: dict[str, Any]) -> tuple[SourceRecord, CommunicationProjection]:
     event_time = to_utc(str(row["ts_utc"]))
     subscriber = normalize_phone(str(row["subscriber_msisdn"]))
     peer = normalize_phone(str(row["peer"]))
@@ -35,7 +35,6 @@ def _record(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, Communicat
     }
     body = row.get("body")
     record = SourceRecord(
-        case_id=case_id,
         source_system=SOURCE_SYSTEM,
         source_record_id=str(row["msg_id"]),
         record_type="extraction_message",
@@ -48,7 +47,6 @@ def _record(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, Communicat
     )
     projection = CommunicationProjection(
         record_id=record.record_id,
-        case_id=case_id,
         channel=str(row["app"]),
         direction=str(row["direction"]),
         from_endpoint=subscriber if outbound else peer,
@@ -62,9 +60,9 @@ def _record(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, Communicat
     return record, projection
 
 
-def load_extraction(edition_dir: Path, case_id: str) -> SourceBatch:
+def load_extraction(edition_dir: Path) -> SourceBatch:
     lines = (edition_dir / RELATIVE_PATH).read_text(encoding="utf-8").splitlines()
-    rows = [_record(case_id, json.loads(line)) for line in lines if line.strip()]
+    rows = [_record(json.loads(line)) for line in lines if line.strip()]
     return SourceBatch(
         source_system=SOURCE_SYSTEM,
         records=[record for record, _ in rows],

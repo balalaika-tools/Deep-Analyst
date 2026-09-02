@@ -50,6 +50,17 @@ def get_sse_heartbeat_s(request: Request) -> float:
     return float(value)
 
 
+def get_sse_shutdown_grace_s(request: Request) -> float:
+    """Seconds an in-flight stream may keep running after SIGTERM before it is force-closed.
+
+    Runtimes composed without a shutdown budget get sse-starlette's default of no grace.
+    """
+    value = getattr(_runtime(request), "shutdown_timeout_s", 0.0)
+    if not isinstance(value, int | float) or value < 0:
+        raise RuntimeError("runtime shutdown grace policy is invalid")
+    return float(value)
+
+
 def get_readiness_timeout_s(request: Request) -> float:
     value = _runtime_component(request, "readiness_timeout_s")
     if not isinstance(value, int | float) or value <= 0:
@@ -58,10 +69,17 @@ def get_readiness_timeout_s(request: Request) -> float:
 
 
 def _runtime_component(request: Request, name: str) -> object:
-    runtime = getattr(request.app.state, "runtime", None)
-    if runtime is None or not hasattr(runtime, name):
+    runtime = _runtime(request)
+    if not hasattr(runtime, name):
         raise RuntimeError("application runtime is not initialized")
     return getattr(runtime, name)
+
+
+def _runtime(request: Request) -> object:
+    runtime = getattr(request.app.state, "runtime", None)
+    if runtime is None:
+        raise RuntimeError("application runtime is not initialized")
+    return runtime
 
 
 __all__ = [
@@ -74,4 +92,5 @@ __all__ = [
     "get_readiness_timeout_s",
     "get_sse_chunk_chars",
     "get_sse_heartbeat_s",
+    "get_sse_shutdown_grace_s",
 ]

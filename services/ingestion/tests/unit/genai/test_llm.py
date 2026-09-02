@@ -39,6 +39,30 @@ def test_chat_model_receives_configured_reasoning_effort(
     assert captured["config"].max_pool_connections == 37
 
 
+def test_terra_chat_model_omits_unsupported_generation_options(
+    monkeypatch: pytest.MonkeyPatch,
+    scripted_model_factory: Callable[[], BaseChatModel],
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_init_chat_model(model_id: str, **kwargs: Any) -> BaseChatModel:
+        captured.update(model_id=model_id, **kwargs)
+        return scripted_model_factory()
+
+    monkeypatch.setattr("langchain.chat_models.init_chat_model", fake_init_chat_model)
+    settings = Settings.model_construct(
+        bedrock_chat_model_id="global.openai.gpt-5.6-terra",
+        aws_region="eu-central-1",
+        llm_reasoning_effort="high",
+        llm_max_in_flight=37,
+    )
+
+    build_chat_model(settings, rate_limiter=cast(BaseRateLimiter, object()), callbacks=[])
+
+    assert "temperature" not in captured
+    assert "reasoning_effort" not in captured
+
+
 def test_embedding_client_pool_matches_the_physical_in_flight_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

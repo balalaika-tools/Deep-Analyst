@@ -37,11 +37,11 @@ from ingestion.adapters.s3.evidence_bucket import (
     S3EditionSources,
     build_evidence_bucket,
 )
-from ingestion.application.ingest_case import (
+from ingestion.application.ingest_dataset import (
     IngestionDependencies,
     IngestionPlan,
     RunOutcome,
-    ingest_case,
+    ingest_dataset,
 )
 from ingestion.config.settings import PIPELINE_VERSION, Settings
 from ingestion.db.engine import build_engine, build_session_factory
@@ -62,7 +62,11 @@ from ingestion.observability.events import (
     LogEvent,
     Outcome,
 )
-from ingestion.ports.ingestion_ledger import ChunkingConfig, compute_fingerprint
+from ingestion.ports.ingestion_ledger import (
+    ChunkingConfig,
+    compute_fingerprint,
+    compute_source_digest,
+)
 
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
@@ -86,7 +90,7 @@ class RuntimeFactories:
     evidence_bucket: Callable[[Settings], EvidenceBucket] = build_evidence_bucket
     embeddings: Callable[[Settings], Embeddings] = build_embeddings
     chat_model: Callable[..., BaseChatModel] = build_chat_model
-    ingest: Callable[[IngestionPlan, IngestionDependencies], Awaitable[RunOutcome]] = ingest_case
+    ingest: Callable[[IngestionPlan, IngestionDependencies], Awaitable[RunOutcome]] = ingest_dataset
 
 
 DEFAULT_FACTORIES = RuntimeFactories()
@@ -111,12 +115,13 @@ def _metric_views() -> Sequence[View]:
 
 def build_plan(settings: Settings, manifest: Manifest) -> IngestionPlan:
     chunking = ChunkingConfig(settings.chunk_window_chars, settings.chunk_overlap_chars)
+    package_root = Path(__file__).resolve().parents[1]
     return IngestionPlan(
-        case_id=manifest.case_id,
         edition=manifest.edition,
         edition_dir=manifest.path.parent,
         fingerprint=compute_fingerprint(
             manifest_bytes=manifest.raw_bytes,
+            source_digest=compute_source_digest(package_root),
             embedding_model_id=settings.bedrock_embedding_model_id,
             chunking=chunking,
             pipeline_version=PIPELINE_VERSION,
@@ -227,7 +232,7 @@ async def run(settings: Settings, factories: RuntimeFactories = DEFAULT_FACTORIE
                 plan = build_plan(settings, manifest)
                 engine = factories.engine(settings)
                 await factories.prepare_store(engine, settings.embedding_dimensions)
-                sources = S3EditionSources(bucket, edition, plan.case_id, engine)
+                sources = S3EditionSources(bucket, edition, engine)
                 deps = _build_dependencies(
                     settings,
                     plan,

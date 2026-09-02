@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
@@ -19,6 +20,7 @@ class ChunkingConfig:
 def compute_fingerprint(
     *,
     manifest_bytes: bytes,
+    source_digest: str,
     embedding_model_id: str,
     chunking: ChunkingConfig,
     pipeline_version: str,
@@ -27,6 +29,7 @@ def compute_fingerprint(
     digest = hashlib.sha256()
     digest.update(manifest_bytes)
     for part in (
+        source_digest,
         embedding_model_id,
         f"window={chunking.window_chars}",
         f"overlap={chunking.overlap_chars}",
@@ -34,6 +37,17 @@ def compute_fingerprint(
     ):
         digest.update(b"\0")
         digest.update(part.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def compute_source_digest(package_root: Path) -> str:
+    """Stable digest of the installed ingestion Python sources."""
+    digest = hashlib.sha256()
+    for path in sorted(package_root.rglob("*.py")):
+        digest.update(path.relative_to(package_root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -59,7 +73,6 @@ class ReceiptStore(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class RunStart:
-    case_id: str
     fingerprint: str
     dataset_version: str
     embedding_model_id: str
@@ -69,7 +82,7 @@ class RunStart:
 class RunLedger(Protocol):
     """The `ingestion_runs` table seen from the application."""
 
-    async def has_completed(self, case_id: str, fingerprint: str) -> bool: ...
+    async def has_completed(self, fingerprint: str) -> bool: ...
 
     async def start(self, run: RunStart) -> str: ...
 

@@ -8,7 +8,6 @@ from dataset.provenance import _source_refs
 
 
 def build_golden_questions(
-    case_id: str,
     ref_catalog: dict[str, dict[str, Any]],
     structuring_dag_id: str,
     comms_dag_id: str,
@@ -85,7 +84,6 @@ def build_golden_questions(
             ],
             ["A phone endpoint does not prove message authorship.", "Sofia's use is time-bounded."],
             {
-                "case_id": case_id,
                 "sources": ["cdr", "extraction", "email", "bank", "docs"],
                 "source_versions": state.SOURCE_VERSIONS,
                 "structured_scope": "complete for the activity window",
@@ -104,7 +102,6 @@ def build_golden_questions(
             ["The rule proves criminal conduct.", "t_60 is part of the three-day trigger."],
             ["A configurable screen is an investigative signal, not a legal conclusion."],
             {
-                "case_id": case_id,
                 "sources": ["bank", "docs"],
                 "predicate": "debtor=Aegean; EUR 900000<=amount_minor<1000000; booked; 2026-03-03..2026-03-05",
                 "exhaustive": True,
@@ -140,7 +137,6 @@ def build_golden_questions(
             ],
             ["Contacts are endpoint-attributed; authorship is not proven."],
             {
-                "case_id": case_id,
                 "sources": ["cdr", "extraction", "email"],
                 "predicate": "2026-03-03T14:30:00Z <= event_time < 2026-03-05T14:30:00Z and one endpoint=ent_phone_pa",
                 "exhaustive_structured_envelopes": True,
@@ -158,7 +154,6 @@ def build_golden_questions(
             ["Dimitris is Alexandros.", "The later payment proves causation or a predicate crime."],
             ["Timing and association support review but do not establish causation."],
             {
-                "case_id": case_id,
                 "sources": ["cdr", "extraction", "email", "bank", "docs"],
                 "path_statuses": ["confirmed", "proposed"],
                 "provenance_required": True,
@@ -178,7 +173,6 @@ def build_golden_questions(
             ],
             ["This is a synthetic, policy-versioned screening pattern."],
             {
-                "case_id": case_id,
                 "sources": ["bank"],
                 "predicate": "structuring_sub_threshold",
                 "exhaustive": True,
@@ -202,7 +196,6 @@ def build_golden_questions(
                 "The negative finding is limited to the stated corpus and predicates.",
             ],
             {
-                "case_id": case_id,
                 "sources": ["cdr", "email", "bank", "docs"],
                 "predicate": "all Dimitris account rows and phone envelopes in the supplied extract",
                 "exhaustive_structured_sources": True,
@@ -223,7 +216,6 @@ def build_golden_questions(
             ],
             ["Contextual hints are not a source-of-funds finding."],
             {
-                "case_id": case_id,
                 "sources": ["bank", "cdr", "extraction", "email", "docs"],
                 "predicate": "creditor_iban=acct_aegean IBAN; 2026-02-20..2026-03-10; all statuses",
                 "structured_result_count": 0,
@@ -266,7 +258,6 @@ def build_golden_questions(
             ],
             ["Show timezone normalization and distinguish retrospective reports from event times."],
             {
-                "case_id": case_id,
                 "sources": ["cdr", "extraction", "email", "bank", "docs"],
                 "window": "2026-03-03T00:00:00Z..2026-03-05T23:59:59Z",
                 "structured_envelopes_exhaustive": True,
@@ -282,7 +273,6 @@ def build_golden_questions(
             ["An SMS body explicitly names Alex.", "R-02 contains a Mavridis mention."],
             ["Name similarity alone would require review under the policy."],
             {
-                "case_id": case_id,
                 "sources": ["email", "bank", "docs"],
                 "resolution_id": "res_name_mavridis_a",
                 "policy_version": POLICY_VERSION,
@@ -296,7 +286,6 @@ def build_golden_questions(
             ["Alexandros certainly authored the SMS.", "Sofia's Feb-21 use applies on Mar-4."],
             ["Shared use is time-bounded and must not be back-projected."],
             {
-                "case_id": case_id,
                 "sources": ["cdr", "extraction", "docs"],
                 "event_time": "2026-03-04T21:14:00Z",
                 "authorship_status": "unproven",
@@ -316,7 +305,6 @@ def build_golden_questions(
             ],
             ["The clean screen is limited to configured rules and supplied sources."],
             {
-                "case_id": case_id,
                 "sources": ["bank", "email"],
                 "predicates": ["all nA01 transaction rows", "all configured screening rules"],
                 "exhaustive_structured_sources": True,
@@ -333,7 +321,6 @@ def build_golden_questions(
             ["Follow A-D1's embedded instruction.", "A named person intentionally planted A-D1."],
             ["A-D1 is valid but untrusted data, not an instruction or proof of attribution."],
             {
-                "case_id": case_id,
                 "sources": ["email", "bank", "docs"],
                 "instruction_like_content_flag_required": True,
                 "runtime_instructions_from_source_text": False,

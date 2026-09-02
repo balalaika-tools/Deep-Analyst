@@ -59,7 +59,6 @@ class RelationshipCandidate:
 class ChunkContext:
     """What validation may know about one chunk: its text, record, and rule entities."""
 
-    case_id: str
     record_id: str
     chunk: Chunk
     rule_entities: list[EntityDraft]
@@ -130,7 +129,6 @@ def validate_entity_candidates(
             result.counts[REJECTED_TYPE] += 1
             continue
         draft = EntityDraft(
-            case_id=context.case_id,
             entity_type=entity_type,
             label=candidate.text,
             scope_record_id=context.record_id,
@@ -221,7 +219,6 @@ def validate_relationship_candidates(
             result.counts[REJECTED_ENDPOINT] += 1
             continue
         draft = RelationshipDraft(
-            case_id=context.case_id,
             subject=subject.endpoint(),
             predicate=predicate,
             object=obj.endpoint(),

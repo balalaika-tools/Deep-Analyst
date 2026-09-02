@@ -11,9 +11,9 @@ prototype ingestion schema, ontology, retrieval implementation, or agent.
 
 ### Requirement: Deterministic canonical generation
 
-The generator SHALL produce the canonical case `case_trg_001` from seed
-`20260305` with stable source IDs, fixed generated metadata, and reproducible
-content under the pinned toolchain.
+The generator SHALL produce the canonical dataset from seed `20260305` with globally unique stable
+source IDs, fixed generated metadata, and reproducible content under the pinned toolchain.
+Generated artifacts and identifiers SHALL NOT contain an evidence partition identifier.
 
 #### Scenario: Repeated canonical builds are equivalent
 
@@ -23,14 +23,14 @@ content under the pinned toolchain.
 #### Scenario: A non-canonical seed is isolated
 
 - **WHEN** generation uses a seed other than `20260305`
-- **THEN** the output uses a distinct variant path and case namespace rather than
-  overwriting or aliasing `case_trg_001`
+- **THEN** the output uses a distinct variant path and globally unique source identities rather
+  than overwriting or aliasing the canonical output
 
 ### Requirement: Parallel English and Greek editions
 
 The generator SHALL provide an English primary edition at `dataset/data/` and a
 meaning-equivalent Greek edition at `dataset/editions/el/data/`. Both editions
-SHALL preserve the same case, stable source IDs, timestamps, amounts, accounts,
+SHALL preserve the same globally unique stable source IDs, timestamps, amounts, accounts,
 devices, communication endpoints, planted relationships, and expected safety
 behavior.
 
@@ -39,6 +39,16 @@ behavior.
 - **WHEN** the same source ID is read from both editions
 - **THEN** it describes the same event or evidence item while translated text,
   hashes, and character offsets may differ
+
+### Requirement: Raw artifacts contain no evidence partition identity
+
+Every generated source schema, row, document front matter block, manifest entry, expected preview,
+provenance artifact, and ground-truth artifact SHALL omit evidence partition fields.
+
+#### Scenario: Generated editions are inspected
+
+- **WHEN** the contract validator checks both generated editions
+- **THEN** no generated field or identifier encodes an evidence partition identity
 
 ### Requirement: Exact source inventory
 

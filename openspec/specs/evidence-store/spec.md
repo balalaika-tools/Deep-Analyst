@@ -10,20 +10,20 @@ projections, and the lexical and vector indexes over text chunks.
 
 ### Requirement: Source-of-truth tables
 The store SHALL hold `records`, `entities`, and `relationships` as the only source-of-truth
-tables. A record SHALL carry case, source system, source record identifier, record type,
-nullable UTC event time and original time, nullable text, structured payload, source path, and
-content hash. An entity SHALL carry case, entity type, label, nullable normalized key, and
-source references. A relationship SHALL carry case, subject and object entity references,
-predicate, status, method, nullable occurred-at and validity interval, source references, and
-attributes.
+tables. A record SHALL carry a globally unique identity, source system, source record identifier,
+record type, nullable UTC event time and original time, nullable text, structured payload, source
+path, and content hash. An entity SHALL carry a globally unique identity, entity type, label,
+nullable normalized key, and source references. A relationship SHALL carry a globally unique
+identity, subject and object entity references, predicate, status, method, nullable occurred-at and
+validity interval, source references, and attributes. None of these tables or their keys SHALL
+contain an evidence partition identifier.
 
 #### Scenario: Records are unique per source item
-- **WHEN** two records with the same case, source system, and source record identifier are
-  written
+- **WHEN** two records with the same source system and source record identifier are written
 - **THEN** the second write updates the first row rather than creating a duplicate
 
 #### Scenario: Normalized identifiers are unique per type
-- **WHEN** two entities with the same case, entity type, and normalized key are written
+- **WHEN** two entities with the same entity type and normalized key are written
 - **THEN** exactly one entity row exists for that key
 
 ### Requirement: Small ontology with endpoint rules
@@ -73,25 +73,24 @@ labels SHALL remain distinct entities; only exact normalized identifiers reuse a
 - **THEN** two distinct `PERSON` entities exist, each with its own source references
 
 ### Requirement: Derived typed projections
-The store SHALL provide rebuildable projection tables that reference their parent record:
-`transactions` (booking time UTC, value date, debtor and creditor IBAN and name, integer
-minor-unit amount, amount text, currency, status, remittance information), `accounts` (IBAN,
-holder name, holder type, BIC, opened date), `communications` (channel, direction, normalized
-from and to endpoints, UTC event time, original time, duration, device identifier), and
-`chunks` (record reference, character offsets, text, source system, event time, embedding).
-Projections SHALL be indexed for case-scoped time, amount, IBAN, and endpoint filters.
+The store SHALL provide rebuildable `transactions`, `accounts`, `communications`, and `chunks`
+projections referencing globally identified parent records. Projections SHALL omit evidence
+partition identity and SHALL be indexed for global time, amount, identifier, endpoint, source, and
+similarity filters.
 
 #### Scenario: Projection rows trace to records
 - **WHEN** any projection row is read
-- **THEN** it references an existing record and can be rebuilt from that record's payload
+- **THEN** it references an existing globally identified record and can be rebuilt from that
+  record's payload
 
 #### Scenario: Typed filters need no JSON access
 - **WHEN** transactions are filtered by amount range and UTC time window
-- **THEN** the query uses typed columns of the projection only
+- **THEN** the query uses typed projection columns without a partition predicate
 
 ### Requirement: Lexical and vector text indexes
-Chunks SHALL be searchable by BM25 ranking over their text and by cosine similarity over
-their embedding, both scoped by case and filterable by source system and event time.
+Chunks SHALL be searchable globally by BM25 ranking over text and cosine similarity over
+embeddings, with optional source-system and event-time filters. Search SHALL NOT require or apply
+an evidence partition filter.
 
 #### Scenario: Exact reference is found lexically
 - **WHEN** the lexical index is queried for `INV-2231`
@@ -100,7 +99,7 @@ their embedding, both scoped by case and filterable by source system and event t
 
 #### Scenario: Nearest chunks by embedding
 - **WHEN** the vector index is queried with an embedding and a top-k
-- **THEN** at most k chunks are returned ordered by ascending cosine distance
+- **THEN** at most k chunks from the global corpus are returned in similarity order
 
 ### Requirement: Ingestion run ledger
 The store SHALL record each ingestion run with its fingerprint, dataset version, embedding
@@ -109,3 +108,27 @@ model identifier, start and completion times, outcome, and summary counts.
 #### Scenario: Completed run is discoverable by fingerprint
 - **WHEN** a run completes successfully
 - **THEN** a ledger row with outcome `completed` exists for its fingerprint
+
+### Requirement: Read-only agent access surface
+The evidence store SHALL expose model-authored queries only through a versioned `agent_read`
+schema of plain views that project allowlisted columns from the global structured projections while
+preserving stable evidence identifiers, source references, and content hashes. Trusted
+retrieval and graph code MAY query the canonical tables and indexes directly with bound
+parameters. The `agent_reader` role SHALL have `SELECT` only, SHALL default to read-only
+transactions, and SHALL have no `TEMP` or `CREATE` privilege and no write path to evidence.
+
+#### Scenario: Agent reads an approved view
+- **WHEN** the `agent_reader` role selects allowlisted transaction fields from an `agent_read` view
+- **THEN** the query can return every matching row in the evidence store with its provenance
+
+#### Scenario: Agent cannot mutate evidence
+- **WHEN** the `agent_reader` role attempts an insert, update, delete, truncate, or schema change
+- **THEN** PostgreSQL rejects the operation and canonical evidence remains unchanged
+
+#### Scenario: Temporary object cannot shadow a view
+- **WHEN** the `agent_reader` role attempts to create a temporary relation
+- **THEN** PostgreSQL denies temporary-object creation
+
+#### Scenario: SQL cannot alter session state
+- **WHEN** agent-authored SQL attempts `SET`, `set_config`, or `current_setting`
+- **THEN** the SQL policy gate rejects the plan before any database round trip

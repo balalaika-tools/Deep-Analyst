@@ -35,7 +35,19 @@ class DatabasePools:
     writer: AgentPool
 
     async def open(self) -> None:
-        await asyncio.gather(self.reader.open(wait=True), self.writer.open(wait=True))
+        """Open both pools; if one fails, cancel and await the other before re-raising."""
+
+        opens = [
+            asyncio.ensure_future(self.reader.open(wait=True)),
+            asyncio.ensure_future(self.writer.open(wait=True)),
+        ]
+        done, pending = await asyncio.wait(opens, return_when=asyncio.FIRST_EXCEPTION)
+        for task in pending:
+            task.cancel()
+        # Retrieve every outcome so no task exception is left unretrieved by close().
+        await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            task.result()
 
     async def close(self, *, timeout_s: float = 10.0) -> None:
         async with asyncio.timeout(timeout_s):

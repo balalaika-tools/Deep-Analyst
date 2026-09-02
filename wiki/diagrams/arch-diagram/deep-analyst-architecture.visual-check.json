@@ -6,9 +6,9 @@
   "status": "pass",
   "visualReview": "pending",
   "artifact": {
-    "path": "/Users/arafiet/MyProjects/Deep-Analyst/docs/deep-analyst-architecture.html",
-    "sha256": "5792bedd4ce25b19c6b6bb4001ebbbd9b83089f5d2ab0e1f6a0e89d810c193da",
-    "bytes": 723344
+    "path": "/Users/arafiet/MyProjects/Deep-Analyst/wiki/diagrams/arch-diagram/deep-analyst-architecture.html",
+    "sha256": "26caaad9de6927795898506bc4c68a4e591d49f43bd936a86b9f9809383efab2",
+    "bytes": 723324
   },
   "state": {
     "detail": "read",

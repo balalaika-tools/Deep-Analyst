@@ -5,7 +5,7 @@ from typing import Any
 from dataset.core.fixtures import DEVICES, PHONES
 
 
-def build_entities(case_id: str) -> list[dict[str, Any]]:
+def build_entities() -> list[dict[str, Any]]:
     entity_specs = [
         ("ent_person_mavridis_a", "PERSON", "Alexandros Mavridis"),
         ("ent_person_mavridis_d", "PERSON", "Dimitris Mavridis"),
@@ -39,7 +39,6 @@ def build_entities(case_id: str) -> list[dict[str, Any]]:
     return [
         {
             "entity_id": entity_id,
-            "case_id": case_id,
             "entity_type": entity_type,
             "canonical_label": label,
             "status": "confirmed",

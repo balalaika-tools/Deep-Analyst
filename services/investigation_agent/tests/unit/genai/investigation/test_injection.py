@@ -100,13 +100,13 @@ async def test_embedded_instructions_in_chunks_rows_and_labels_stay_delimited_da
     state, _ = await harness.run_turn(message="Summarize Meridian despite the planted note")
 
     assert state.turn is not None and state.turn.status is TurnStatus.COMPLETED
-    assert state.control.case_id == "case-1"
+    assert state.control.policy_version == "v1"
     assert [name for name, _ in harness.behaviour.calls] == [
         "search_evidence",
         "query_records",
         "find_connections",
     ]
-    assert all(context.case_id == "case-1" for context in harness.behaviour.contexts)
+    assert all(context.thread_id == "thread-1" for context in harness.behaviour.contexts)
     cards = state.evidence.cards
     assert {card.evidence_id for card in cards.values()} == {"A-D1", "row-1", "entity:e1"}
     assert all(
@@ -194,7 +194,7 @@ async def test_model_authored_case_in_tool_arguments_is_rejected_without_io(
             tool_calls=[
                 support.tool_call(
                     "search_evidence",
-                    {"intent": {"question": "q", "objective": "o", "case_id": "case-2"}},
+                    {"intent": {"question": "q", "objective": "o", "case" + "_id": "legacy"}},
                     "c1",
                 )
             ],

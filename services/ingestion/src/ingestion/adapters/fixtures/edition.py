@@ -20,9 +20,8 @@ SOURCE_ORDER: tuple[str, ...] = (
 
 
 class EditionSources:
-    def __init__(self, edition_dir: Path, case_id: str, engine: AsyncEngine) -> None:
+    def __init__(self, edition_dir: Path, engine: AsyncEngine) -> None:
         self._edition_dir = edition_dir
-        self._case_id = case_id
         self._engine = engine
 
     @property
@@ -31,14 +30,14 @@ class EditionSources:
 
     async def load(self, source_system: str) -> SourceBatch:
         if source_system == cdr.SOURCE_SYSTEM:
-            return cdr.load_cdr(self._edition_dir, self._case_id)
+            return cdr.load_cdr(self._edition_dir)
         if source_system == extraction.SOURCE_SYSTEM:
-            return extraction.load_extraction(self._edition_dir, self._case_id)
+            return extraction.load_extraction(self._edition_dir)
         if source_system == email.SOURCE_SYSTEM:
-            return email.load_emails(self._edition_dir, self._case_id)
+            return email.load_emails(self._edition_dir)
         if source_system == documents.SOURCE_SYSTEM:
-            return documents.load_documents(self._edition_dir, self._case_id)
+            return documents.load_documents(self._edition_dir)
         if source_system == bank.SOURCE_SYSTEM:
             async with self._engine.begin() as conn:
-                return await bank.load_bank(conn, self._edition_dir, self._case_id)
+                return await bank.load_bank(conn, self._edition_dir)
         raise ValueError(f"unknown source system: {source_system}")

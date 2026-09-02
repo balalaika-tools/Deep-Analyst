@@ -112,7 +112,7 @@
     {
       "id": "evidence-db",
       "type": "database",
-      "label": "Evidence Graph DB",
+      "label": "Global Store",
       "sublabel": "records + graph",
       "tag": "BM25 + pgvector",
       "row": 3,
@@ -141,7 +141,7 @@
     },
     {
       "kind": "security-group",
-      "label": "Case-scoped read boundary",
+      "label": "Global read-only boundary",
       "wraps": ["rag-agent", "sql-agent", "graph-tool", "evidence-db"]
     }
   ],
@@ -270,7 +270,7 @@
       "title": "Evidence graph",
       "items": [
         "The graph is relational: entities and relationships are stored in PostgreSQL",
-        "BM25 and vector indexes are rebuildable projections of the same evidence store"
+        "BM25 and vector indexes are rebuildable projections of the global evidence store"
       ]
     }
   ]

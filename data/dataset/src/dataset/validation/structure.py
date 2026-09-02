@@ -1,5 +1,4 @@
-"""Validate structural invariants: record counts, stable ID sets, case
-namespace consistency, the versioned policy, and static calendar facts."""
+"""Validate structural invariants, stable IDs, policy, and calendar facts."""
 
 from datetime import datetime
 from typing import Any
@@ -28,8 +27,7 @@ def validate_record_counts(
     )
 
 
-def validate_stable_ids_and_case_namespace(
-    case_id: str,
+def validate_stable_ids(
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
     emails: list[dict[str, Any]],
@@ -96,14 +94,6 @@ def validate_stable_ids_and_case_namespace(
     _require(
         {row["document_id"] for row in documents} == expected_document_ids,
         "document stable IDs differ",
-    )
-
-    for collection in [cdr, extraction, accounts, transactions]:
-        _require(all(row["case_id"] == case_id for row in collection), "case namespace mismatch")
-    _require(all(row["headers"]["X-Case-ID"] == case_id for row in emails), "email case mismatch")
-    _require(
-        all(row["front_matter"]["case_id"] == case_id for row in documents),
-        "document case mismatch",
     )
 
     return (

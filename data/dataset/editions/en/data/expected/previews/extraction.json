@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": "2026-03-04T21:14:00Z",
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -11,11 +10,11 @@
     },
     "original_time_value": "2026-03-04T21:14:00Z",
     "parser_version": "extraction-parser@1",
-    "raw_content_hash": "fa28f88d6a4eb97d6ff32e2e9731f471c79f1807eca24ecd398cca4bf7e21bf8",
+    "raw_content_hash": "0ea07af0593e4326696542bb8b5b2faa8057d396c8b94bf72e909a2b3b633e46",
     "raw_object_uri": "raw/extraction.jsonl",
-    "record_id": "case_trg_001:extraction:X-204",
+    "record_id": "extraction:X-204",
     "record_type": "MESSAGE",
-    "record_version_id": "case_trg_001:extraction:X-204:v1",
+    "record_version_id": "extraction:X-204:0ea07af0593e4326696542bb8b5b2faa8057d396c8b94bf72e909a2b3b633e46",
     "source_record_id": "X-204",
     "source_system": "extraction",
     "source_version_id": "extraction@1-en"
@@ -23,7 +22,6 @@
   "raw": {
     "app": "sms",
     "body": "leaving tomorrow, same place as last time",
-    "case_id": "case_trg_001",
     "direction": "out",
     "imei": "356923107744818",
     "msg_id": "X-204",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -14,7 +15,6 @@ from investigation_agent.application.invoke_turn import (
     PreparedTurnKind,
     RequestInProgress,
     ThreadBusy,
-    ThreadCaseConflict,
     ThreadFull,
 )
 from investigation_agent.application.thread_locks import ThreadLockRegistry
@@ -33,6 +33,7 @@ from investigation_agent.domain.investigation_state import (
     InvestigationState,
     new_turn_state,
 )
+from pydantic import ValidationError
 
 NOW = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
 
@@ -71,12 +72,8 @@ class FakeGraph:
             yield None
 
 
-def _request(
-    *, request_id: str = "request-1", message: str = "Find the transfer", case_id: str = "case-1"
-) -> InvokeRequest:
-    return InvokeRequest(
-        request_id=request_id, thread_id="thread-1", case_id=case_id, message=message
-    )
+def _request(*, request_id: str = "request-1", message: str = "Find the transfer") -> InvokeRequest:
+    return InvokeRequest(request_id=request_id, thread_id="thread-1", message=message)
 
 
 def _service(
@@ -96,7 +93,7 @@ def _service(
 
 
 def _state(
-    request: InvokeRequest, *, case_id: str = "case-1", status: TurnStatus = TurnStatus.RUNNING
+    request: InvokeRequest, *, status: TurnStatus = TurnStatus.RUNNING
 ) -> InvestigationState:
     turn_id = stable_turn_id(request.thread_id, request.request_id)
     message_id = stable_message_id(turn_id)
@@ -105,13 +102,10 @@ def _state(
         request_id=request.request_id,
         message_id=message_id,
         utterance=request.message,
-        case_id=case_id,
         opened_at=NOW,
     ).model_copy(update={"status": status, "intake_complete": True})
     history = append_user_message(
-        InvestigationState(
-            control=ControlState(case_id=case_id, policy_version="policy-v1")
-        ).history,
+        InvestigationState(control=ControlState(policy_version="policy-v1")).history,
         message_id=message_id,
         turn_id=turn_id,
         request_id=request.request_id,
@@ -133,16 +127,16 @@ def _state(
         history = set_turn_status(history, turn_id, TurnStatus.FAILED)
         turn = turn.model_copy(update={"safe_failure_code": "budget_exhausted"})
     return InvestigationState(
-        control=ControlState(case_id=case_id, policy_version="policy-v1"),
+        control=ControlState(policy_version="policy-v1"),
         turn=turn,
         history=history,
     )
 
 
 @pytest.mark.asyncio
-async def test_new_thread_binds_the_case_and_uses_the_public_thread_id_for_the_saver() -> None:
+async def test_new_thread_uses_the_public_thread_id_for_the_saver() -> None:
     graph = FakeGraph()
-    request = InvokeRequest.model_validate({**_request().model_dump(), "owner_id": "attacker"})
+    request = _request()
 
     prepared = await _service(graph).prepare(request)
 
@@ -151,14 +145,18 @@ async def test_new_thread_binds_the_case_and_uses_the_public_thread_id_for_the_s
     assert prepared.config["metadata"] == {
         "app": "investigation",
         "public_thread_id": "thread-1",
-        "case_id": "case-1",
     }
     assert prepared.graph_input is not None
-    assert prepared.graph_input["control"]["case_id"] == "case-1"
     assert prepared.graph_input["turn"]["utterance"] == "Find the transfer"
     assert prepared.graph_input["messages"][0]["content"] == "Find the transfer"
-    assert prepared.context.case_id == "case-1" and prepared.context.thread_id == "thread-1"
+    assert prepared.context.thread_id == "thread-1"
     await prepared.close()
+
+
+def test_removed_scope_field_is_rejected() -> None:
+    removed_field = "case" + "_id"
+    with pytest.raises(ValidationError):
+        InvokeRequest.model_validate({**_request().model_dump(), removed_field: "legacy"})
 
 
 @pytest.mark.asyncio
@@ -243,13 +241,8 @@ async def test_different_request_supersedes_unlocked_running_turn_with_turn_only
 
 
 @pytest.mark.asyncio
-async def test_case_rebind_full_thread_and_incompatible_state_are_rejected_before_execution() -> (
-    None
-):
+async def test_full_thread_and_incompatible_state_are_rejected_before_execution() -> None:
     request = _request()
-    with pytest.raises(ThreadCaseConflict):
-        await _service(FakeGraph(_state(request, case_id="case-2"))).prepare(request)
-
     completed = _state(request, status=TurnStatus.COMPLETED)
     with pytest.raises(ThreadFull):
         await _service(FakeGraph(completed), max_turns=1).prepare(_request(request_id="request-2"))
@@ -269,4 +262,105 @@ async def test_cancel_active_marks_every_executing_turn_cancelled() -> None:
     await service.cancel_active()
 
     assert prepared.cancellation.cancelled
+    await prepared.close()
+
+
+def _two_turn_state(first: InvokeRequest, second: InvokeRequest) -> InvestigationState:
+    """A thread whose current turn is ``second``; ``first`` is an older completed turn."""
+
+    state = _state(first, status=TurnStatus.COMPLETED)
+    second_turn_id = stable_turn_id(second.thread_id, second.request_id)
+    history = append_user_message(
+        state.history,
+        message_id=stable_message_id(second_turn_id),
+        turn_id=second_turn_id,
+        request_id=second.request_id,
+        content=second.message,
+        created_at=NOW,
+        max_turns=10,
+    )
+    history = append_assistant_message(
+        history,
+        message_id="assistant-2",
+        turn_id=second_turn_id,
+        request_id=second.request_id,
+        content="Second answer",
+        created_at=NOW,
+    )
+    turn = new_turn_state(
+        turn_id=second_turn_id,
+        request_id=second.request_id,
+        message_id=stable_message_id(second_turn_id),
+        utterance=second.message,
+        opened_at=NOW,
+    ).model_copy(update={"status": TurnStatus.COMPLETED, "assistant_message_id": "assistant-2"})
+    return state.model_copy(update={"turn": turn, "history": history})
+
+
+@pytest.mark.asyncio
+async def test_older_completed_request_is_replayed_without_running_the_graph() -> None:
+    first = _request()
+    second = _request(request_id="request-2", message="Then the beneficiary")
+    graph = FakeGraph(_two_turn_state(first, second))
+
+    prepared = await _service(graph).prepare(first)
+
+    assert prepared.kind is PreparedTurnKind.REPLAY_COMPLETED
+    assert prepared.graph_input is None
+    assert [event async for event in prepared.graph_events()] == []
+    assert graph.stream_calls == []
+    assert prepared.replay_state is not None and prepared.replay_state.turn is not None
+    replayed = prepared.replay_state.turn
+    assert replayed.turn_id == stable_turn_id(first.thread_id, first.request_id)
+    assert replayed.assistant_message_id == "assistant-1"
+    assert replayed.status is TurnStatus.COMPLETED
+    await prepared.close()
+
+
+@pytest.mark.asyncio
+async def test_older_request_id_with_different_message_conflicts_instead_of_starting() -> None:
+    first = _request()
+    second = _request(request_id="request-2", message="Then the beneficiary")
+    graph = FakeGraph(_two_turn_state(first, second))
+    locks = ThreadLockRegistry()
+
+    with pytest.raises(IdempotencyConflict):
+        await _service(graph, locks=locks).prepare(_request(message="Find the transfer!"))
+
+    assert graph.stream_calls == []
+    assert not await locks.is_locked("thread-1")
+
+
+@dataclass
+class SlowGraph(FakeGraph):
+    async def astream(self, input: Any, config: Any, **kwargs: Any) -> AsyncIterator[object]:
+        del input, config, kwargs
+        yield {"type": "custom", "data": {}}
+        await asyncio.sleep(10)
+        yield {"type": "custom", "data": {}}
+
+
+@pytest.mark.asyncio
+async def test_turn_timeout_surfaces_as_timeout_error_even_when_consumer_is_slow() -> None:
+    service = InvokeTurn(
+        graph=SlowGraph(),
+        locks=ThreadLockRegistry(),
+        policy=InvocationPolicy(
+            policy_version="policy-v1",
+            max_message_chars=1_000,
+            turn_timeout_s=0.05,
+            max_history_turns=10,
+        ),
+        clock=lambda: NOW,
+    )
+    prepared = await service.prepare(_request())
+    events = prepared.graph_events()
+
+    first = await anext(events)
+    assert first == {"type": "custom", "data": {}}
+    # The consumer holds the first event past the deadline; the budget must still be reported as
+    # a timeout on the next pull rather than as a bare cancellation.
+    await asyncio.sleep(0.1)
+    with pytest.raises(TimeoutError):
+        await anext(events)
     await prepared.close()

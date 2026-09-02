@@ -80,7 +80,7 @@ def _settings() -> Settings:
         AWS_REGION="eu-west-1",
         BEDROCK_CHAT_MODEL_ID="chat-model",
         BEDROCK_EMBEDDING_MODEL_ID="embedding-model",
-        EXPECTED_AGENT_INITIALIZER_VERSION="agent-runtime@1",
+        EXPECTED_AGENT_INITIALIZER_VERSION="agent-runtime@2",
     )
 
 
@@ -136,7 +136,6 @@ async def test_runtime_composes_with_fakes_without_provider_or_database_clients(
 def test_runtime_context_carries_only_trusted_scope_deadline_and_cancellation() -> None:
     now = datetime.now(UTC)
     context = RuntimeContext(
-        case_id="case-1",
         thread_id="thread-1",
         request_id="request-1",
         deadline=now + timedelta(seconds=5),

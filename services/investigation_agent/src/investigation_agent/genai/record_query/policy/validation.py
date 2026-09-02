@@ -101,28 +101,70 @@ class _PolicyState:
             self.cte_names.add(name)
 
     def collect_relations(self, document: object) -> None:
-        for payload in _node_payloads(document, "RangeVar"):
-            schema = payload.get("schemaname")
-            relation = payload.get("relname")
-            if not isinstance(relation, str):
+        """Resolve every RangeVar against the CTEs PostgreSQL would actually see there.
+
+        A CTE name is visible only inside the SELECT it is attached to (and its
+        subqueries) and inside later CTEs of the same WITH list; a CTE body never
+        sees its own name. Anything else must be an allowlisted schema-qualified view.
+        """
+
+        self._collect_scoped_relations(document, frozenset())
+
+    def _collect_scoped_relations(self, value: object, visible_ctes: frozenset[str]) -> None:
+        if isinstance(value, list):
+            for item in value:
+                self._collect_scoped_relations(item, visible_ctes)
+            return
+        if not isinstance(value, dict):
+            return
+        for key, payload in value.items():
+            if key == "SelectStmt" and isinstance(payload, dict) and "withClause" in payload:
+                self._collect_with_scope(payload, visible_ctes)
+            elif key == "RangeVar" and isinstance(payload, dict):
+                self._register_relation(payload, visible_ctes)
+            else:
+                self._collect_scoped_relations(payload, visible_ctes)
+
+    def _collect_with_scope(self, select: dict[str, Any], visible_ctes: frozenset[str]) -> None:
+        with_clause = select["withClause"]
+        if not isinstance(with_clause, dict):
+            raise _ambiguous_parse()
+        if with_clause.get("recursive", False):
+            raise SqlPolicyViolation(
+                "recursive_cte",
+                "recursive CTEs are not allowed",
+                diagnostic_class=DiagnosticClass.POLICY,
+            )
+        scope = visible_ctes
+        for entry in with_clause.get("ctes") or ():
+            cte = entry.get("CommonTableExpr") if isinstance(entry, dict) else None
+            if not isinstance(cte, dict) or not isinstance(cte.get("ctename"), str):
                 raise _ambiguous_parse()
-            if schema is None and relation in self.cte_names:
-                continue
-            if schema != "agent_read" or relation not in VIEW_COLUMNS:
-                raise SqlPolicyViolation(
-                    "relation_not_allowed",
-                    "every base relation must be an allowlisted schema-qualified view",
-                    diagnostic_class=DiagnosticClass.SCHEMA,
-                )
-            self.referenced_views.add(relation)
-            self.alias_to_view[relation] = relation
-            alias = payload.get("alias")
-            if isinstance(alias, dict):
-                alias_payload = alias.get("Alias", alias)
-                if isinstance(alias_payload, dict) and isinstance(
-                    alias_payload.get("aliasname"), str
-                ):
-                    self.alias_to_view[alias_payload["aliasname"]] = relation
+            self._collect_scoped_relations(cte.get("ctequery"), scope)
+            scope = scope | {cte["ctename"]}
+        body = {key: payload for key, payload in select.items() if key != "withClause"}
+        self._collect_scoped_relations(body, scope)
+
+    def _register_relation(self, payload: dict[str, Any], visible_ctes: frozenset[str]) -> None:
+        schema = payload.get("schemaname")
+        relation = payload.get("relname")
+        if not isinstance(relation, str):
+            raise _ambiguous_parse()
+        if schema is None and relation in visible_ctes:
+            return
+        if schema != "agent_read" or relation not in VIEW_COLUMNS:
+            raise SqlPolicyViolation(
+                "relation_not_allowed",
+                "every base relation must be an allowlisted schema-qualified view",
+                diagnostic_class=DiagnosticClass.SCHEMA,
+            )
+        self.referenced_views.add(relation)
+        self.alias_to_view[relation] = relation
+        alias = payload.get("alias")
+        if isinstance(alias, dict):
+            alias_payload = alias.get("Alias", alias)
+            if isinstance(alias_payload, dict) and isinstance(alias_payload.get("aliasname"), str):
+                self.alias_to_view[alias_payload["aliasname"]] = relation
 
     def collect_target_aliases(self, document: object) -> None:
         for payload in _node_payloads(document, "ResTarget"):
@@ -159,7 +201,6 @@ class _PolicyState:
             "A_Expr": self._validate_operator,
             "TypeName": self._validate_type,
             "ParamRef": self._validate_parameter,
-            "WithClause": self._validate_with,
         }.get(node_type)
         if validator is not None:
             validator(payload)
@@ -250,14 +291,6 @@ class _PolicyState:
             raise _ambiguous_parse()
         self.parameter_positions.add(number)
 
-    def _validate_with(self, payload: dict[str, Any]) -> None:
-        if payload.get("recursive", False):
-            raise SqlPolicyViolation(
-                "recursive_cte",
-                "recursive CTEs are not allowed",
-                diagnostic_class=DiagnosticClass.POLICY,
-            )
-
     def require_top_level_provenance(self, payload: object) -> None:
         if not isinstance(payload, dict):
             raise _ambiguous_parse()
@@ -294,7 +327,7 @@ class _PolicyState:
     def _provenance_required() -> NoReturn:
         raise SqlPolicyViolation(
             "provenance_required",
-            "provenance requires direct record_id, case_id, content_hash, and source_refs",
+            "provenance requires direct record_id, content_hash, and source_refs",
             diagnostic_class=DiagnosticClass.POLICY,
         )
 

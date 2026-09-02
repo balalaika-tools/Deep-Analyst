@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": "2026-03-04T21:14:00Z",
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -11,11 +10,11 @@
     },
     "original_time_value": "2026-03-04T23:14:00+02:00",
     "parser_version": "cdr-parser@1",
-    "raw_content_hash": "47574d3316501476fea6f6e6ce7a715263fa171e3916c1ddcf2cf6a912f94e5b",
+    "raw_content_hash": "fe2d12a46a59bef205736d4fc7ed5ddf3b3d6f5f48797980fa1a69ed6265d4e4",
     "raw_object_uri": "raw/cdr.csv",
-    "record_id": "case_trg_001:cdr:c01",
+    "record_id": "cdr:c01",
     "record_type": "SMS",
-    "record_version_id": "case_trg_001:cdr:c01:v1",
+    "record_version_id": "cdr:c01:fe2d12a46a59bef205736d4fc7ed5ddf3b3d6f5f48797980fa1a69ed6265d4e4",
     "source_record_id": "c01",
     "source_system": "cdr",
     "source_version_id": "cdr@1-el"
@@ -23,7 +22,6 @@
   "raw": {
     "called_msisdn": "306949876543",
     "calling_msisdn": "306971234567",
-    "case_id": "case_trg_001",
     "cell_id": "AT-20210-4312",
     "duration_s": "",
     "imei": "356923107744818",

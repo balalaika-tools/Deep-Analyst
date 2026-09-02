@@ -12,7 +12,7 @@ def _validate_source_ref(ref: dict[str, Any], catalog: dict[str, dict[str, Any]]
     record_id = ref["source_record_id"]
     _require(record_id in catalog, "SourceRef points to a missing record")
     meta = catalog[record_id]
-    _require(ref["case_id"] == meta["case_id"], "SourceRef case mismatch")
+    _require(ref["record_id"] == meta["record_id"], "SourceRef record mismatch")
     _require(ref["source_system"] == meta["source"], "SourceRef source mismatch")
     _require(ref["source_version_id"] == meta["source_version"], "SourceRef version mismatch")
     _require(
@@ -108,7 +108,6 @@ def validate_golden_questions(ground_truth: dict[str, Any]) -> None:
 
 
 def validate_observable_layer(
-    case_id: str,
     ref_catalog: dict[str, dict[str, Any]],
     ground_truth: dict[str, Any],
     source_ids: set[str],

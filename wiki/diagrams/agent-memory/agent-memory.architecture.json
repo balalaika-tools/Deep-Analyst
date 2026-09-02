@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Carry state forward — not the conversation",
+    "locale": "en",
+    "output": "agent-memory.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "turnN", "type": "external", "label": "Turn N", "sublabel": "question + agent + tools", "pos": [30, 280], "size": [145, 70] },
+    { "id": "verifiedClose", "type": "security", "label": "Verified turn close", "sublabel": "ground, commit, compact", "pos": [220, 280], "size": [175, 70] },
+    { "id": "customState", "type": "database", "label": "Custom agent state", "sublabel": "durable PostgreSQL checkpoint", "tag": "the cross-turn handoff", "pos": [520, 245], "size": [220, 140] },
+    { "id": "control", "type": "security", "label": "Control", "sublabel": "case + policy", "pos": [420, 70], "size": [120, 64] },
+    { "id": "evidence", "type": "database", "label": "Evidence index", "sublabel": "bounded + cited", "pos": [565, 70], "size": [140, 64] },
+    { "id": "projection", "type": "cloud", "label": "Working projection", "sublabel": "small + replaceable", "pos": [730, 70], "size": [160, 64] },
+    { "id": "contextRebuild", "type": "backend", "label": "Context rebuild", "sublabel": "state → focused prompt", "pos": [930, 280], "size": [180, 70] },
+    { "id": "turnNext", "type": "backend", "label": "Turn N+1", "sublabel": "any API replica", "pos": [1160, 280], "size": [160, 70] },
+    { "id": "fullHistory", "type": "external", "label": "Full conversation history", "sublabel": "product transcript", "tag": "not in the next prompt", "pos": [400, 500], "size": [205, 76] },
+    { "id": "privateArtifacts", "type": "external", "label": "Raw SQL + tool payloads", "sublabel": "nested-agent steps", "tag": "not in the next prompt", "pos": [660, 500], "size": [205, 76] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Only this custom state crosses the turn boundary", "wraps": ["control", "evidence", "projection", "customState"], "pad": 24 },
+    { "kind": "security-group", "label": "Explicitly excluded from the next model prompt", "wraps": ["fullHistory", "privateArtifacts"], "pad": 20 }
+  ],
+  "connections": [
+    { "id": "turn-to-close", "from": "turnN", "to": "verifiedClose", "label": "candidate answer", "variant": "emphasis", "labelAt": [198, 276] },
+    { "id": "close-to-state", "from": "verifiedClose", "to": "customState", "label": "write validated state", "variant": "security" },
+    { "id": "control-to-state", "from": "control", "to": "customState", "label": "fixed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "evidence-to-state", "from": "evidence", "to": "customState", "label": "upsert", "fromSide": "bottom", "toSide": "top", "labelAt": [630, 148] },
+    { "id": "projection-to-state", "from": "projection", "to": "customState", "label": "replace", "fromSide": "bottom", "toSide": "top" },
+    { "id": "state-to-context", "from": "customState", "to": "contextRebuild", "label": "load by thread ID", "variant": "emphasis" },
+    { "id": "context-to-next-turn", "from": "contextRebuild", "to": "turnNext", "label": "bounded context", "variant": "emphasis", "labelAt": [1135, 276] }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "What crosses turns", "items": ["Immutable control + bounded cited evidence + one replaceable projection", "The next turn receives meaning and provenance, not a transcript replay"] },
+    { "dot": "rose", "title": "What stays out of model memory", "items": ["Full conversation history and nested-agent conversations", "Generated SQL, raw rows, and full retrieval payloads"] },
+    { "dot": "cyan", "title": "Why it matters", "items": ["Context stays bounded as the investigation grows", "Any replica can rebuild the next turn from the same validated state"] }
+  ]
+}

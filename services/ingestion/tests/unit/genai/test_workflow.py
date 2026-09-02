@@ -1,7 +1,7 @@
 from typing import Any
 
 import pytest
-from ingestion.application.ingest_case import IngestionPlan, ingest_case
+from ingestion.application.ingest_dataset import IngestionPlan, ingest_dataset
 from ingestion.genai.entity_extraction.agent import build_entity_agent
 from ingestion.genai.entity_extraction.extractor import AgentEntityExtractor
 from ingestion.genai.relationship_extraction.agent import build_relationship_agent
@@ -54,7 +54,7 @@ async def test_each_chunk_workflow_contains_both_agents_and_physical_chat_spans(
     )
 
     with start_genai_span("run ingestion", tracer=tracer) as root:
-        await ingest_case(plan, deps)
+        await ingest_dataset(plan, deps)
 
     spans = exporter.get_finished_spans()
     workflows = [span for span in spans if span.name == "invoke_workflow extract_chunk"]

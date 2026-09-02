@@ -22,7 +22,7 @@ class Graph:
 
     async def aget_state(self, config: Mapping[str, object]) -> Snapshot:
         thread_id = config["configurable"]["thread_id"]  # type: ignore[index]
-        return Snapshot({"control": {"case_id": "case-1"}} if thread_id in self.known else {})
+        return Snapshot({"control": {"policy_version": "v1"}} if thread_id in self.known else {})
 
     def astream(self, *args: Any, **kwargs: Any) -> Any:
         raise AssertionError("deletion never streams")
@@ -90,4 +90,33 @@ async def test_checkpointer_failure_is_translated_and_the_lock_is_released() -> 
 
     assert isinstance(captured.value, DependencyUnavailableFailure)
     assert "secret" not in str(captured.value)
+    assert not await locks.is_locked("thread-1")
+
+
+@dataclass
+class BrokenGraph(Graph):
+    error: Exception | None = None
+
+    async def aget_state(self, config: Mapping[str, object]) -> Snapshot:
+        del config
+        assert self.error is not None
+        raise self.error
+
+
+@pytest.mark.asyncio
+async def test_state_read_failure_is_translated_and_the_lock_is_released() -> None:
+    from investigation_agent.core.errors import AdapterDependencyUnavailableError
+
+    locks = ThreadLockRegistry()
+    checkpointer = Checkpointer()
+
+    with pytest.raises(DependencyUnavailableFailure) as captured:
+        await DeleteThread(
+            graph=BrokenGraph(error=AdapterDependencyUnavailableError("host secret")),
+            checkpointer=checkpointer,
+            locks=locks,
+        ).delete("thread-1")
+
+    assert "secret" not in str(captured.value)
+    assert checkpointer.deleted == []
     assert not await locks.is_locked("thread-1")

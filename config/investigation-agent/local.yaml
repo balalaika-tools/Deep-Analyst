@@ -55,7 +55,7 @@ history_max_page_size: 100
 sse_heartbeat_s: 15.0
 sse_chunk_chars: 512
 
-# Model behavior and telemetry policy. Content capture is deliberately disabled.
+# Model behavior and telemetry policy. Content capture is enabled by default.
 model_temperature: 0.0
 model_reasoning_effort: low
 otel_service_name: investigation-agent
@@ -63,5 +63,5 @@ service_version: dev
 otel_exporter_otlp_endpoint: http://lgtm:4318
 otel_exporter_otlp_traces_endpoint: http://lgtm:4328/v1/traces
 log_export: otlp
-capture_ai_content: false
+capture_ai_content: true
 log_level: INFO

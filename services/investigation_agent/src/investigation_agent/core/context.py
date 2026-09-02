@@ -23,18 +23,17 @@ class CancellationSignal(Protocol):
 class RuntimeContext:
     """Trusted invocation scope excluded from serialized LangGraph state.
 
-    The prototype has no caller identity: the case binding protects state integrity and tool
-    scoping, never access. Every tool receives ``case_id`` from here, not from model arguments.
+    The prototype has no caller identity. The thread binding protects state integrity while
+    evidence tools operate over the global corpus.
     """
 
-    case_id: str
     thread_id: str
     request_id: str
     deadline: datetime
     cancellation: CancellationSignal
 
     def __post_init__(self) -> None:
-        for name in ("case_id", "thread_id", "request_id"):
+        for name in ("thread_id", "request_id"):
             value = getattr(self, name)
             if not value or len(value) > 128:
                 raise ValueError(f"{name} must contain 1-128 characters")

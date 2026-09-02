@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": "2026-03-04T21:14:00Z",
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -11,11 +10,11 @@
     },
     "original_time_value": "2026-03-04T21:14:00Z",
     "parser_version": "extraction-parser@1",
-    "raw_content_hash": "dcb3a14e79876c65bd9ade5e498b6f018f94eae4a1ca27eb4fd8d013721b8798",
+    "raw_content_hash": "3f329c66ecdd4981f584ef9bf25731b4a4df9ba3599e253c04020b0d16bc667a",
     "raw_object_uri": "raw/extraction.jsonl",
-    "record_id": "case_trg_001:extraction:X-204",
+    "record_id": "extraction:X-204",
     "record_type": "MESSAGE",
-    "record_version_id": "case_trg_001:extraction:X-204:v1",
+    "record_version_id": "extraction:X-204:3f329c66ecdd4981f584ef9bf25731b4a4df9ba3599e253c04020b0d16bc667a",
     "source_record_id": "X-204",
     "source_system": "extraction",
     "source_version_id": "extraction@1-el"
@@ -23,7 +22,6 @@
   "raw": {
     "app": "sms",
     "body": "φεύγει αύριο, ίδιο μέρος με την άλλη φορά",
-    "case_id": "case_trg_001",
     "direction": "out",
     "imei": "356923107744818",
     "msg_id": "X-204",

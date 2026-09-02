@@ -29,7 +29,7 @@ def test_yaml_keys_settings_fields_and_service_example_are_synchronized() -> Non
     yaml_values = yaml.safe_load(POLICY_YAML.read_text())
     assert isinstance(yaml_values, dict)
     assert set(yaml_values) == POLICY_FIELDS
-    assert yaml_values["capture_ai_content"] is False
+    assert yaml_values["capture_ai_content"] is True
 
     expected = (
         _aliases(Settings)

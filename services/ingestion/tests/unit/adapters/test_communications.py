@@ -5,11 +5,9 @@ from ingestion.adapters.fixtures.cdr import load_cdr
 from ingestion.adapters.fixtures.email import load_emails
 from ingestion.adapters.fixtures.extraction import load_extraction
 
-CASE = "case_trg_001"
-
 
 def test_cdr_yields_55_records_with_utc_times_and_originals(edition_dir: Path) -> None:
-    batch = load_cdr(edition_dir, CASE)
+    batch = load_cdr(edition_dir)
 
     assert len(batch.records) == len(batch.communications) == 55
     c18 = next(record for record in batch.records if record.source_record_id == "c18")
@@ -28,7 +26,7 @@ def test_cdr_yields_55_records_with_utc_times_and_originals(edition_dir: Path) -
 
 
 def test_extraction_yields_18_records_and_direction_aware_endpoints(edition_dir: Path) -> None:
-    batch = load_extraction(edition_dir, CASE)
+    batch = load_extraction(edition_dir)
 
     assert len(batch.records) == len(batch.communications) == 18
     by_id = {record.source_record_id: record for record in batch.records}
@@ -45,7 +43,7 @@ def test_extraction_yields_18_records_and_direction_aware_endpoints(edition_dir:
 
 
 def test_emails_yield_6_records_with_subject_and_body_text(edition_dir: Path) -> None:
-    batch = load_emails(edition_dir, CASE)
+    batch = load_emails(edition_dir)
 
     assert len(batch.records) == len(batch.communications) == 6
     em1 = next(record for record in batch.records if record.source_record_id == "eM1")

@@ -6,7 +6,7 @@ from dataset.core import state
 from dataset.core.state import _tr
 
 
-def build_emails(case_id: str) -> list[dict[str, Any]]:
+def build_emails() -> list[dict[str, Any]]:
     specs = [
         {
             "email_id": "eM1",
@@ -90,7 +90,6 @@ def build_emails(case_id: str) -> list[dict[str, Any]]:
             "Date": spec["date"],
             "Subject": spec["subject"],
             "Content-Type": "text/plain; charset=UTF-8",
-            "X-Case-ID": case_id,
             "X-Source-Record-ID": spec["email_id"],
             "X-Source-Version": state.SOURCE_VERSIONS["email"],
         }
@@ -101,7 +100,6 @@ def build_emails(case_id: str) -> list[dict[str, Any]]:
             "Date",
             "Subject",
             "Content-Type",
-            "X-Case-ID",
             "X-Source-Record-ID",
             "X-Source-Version",
         ]

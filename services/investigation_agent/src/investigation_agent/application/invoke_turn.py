@@ -1,4 +1,4 @@
-"""Resolve idempotency, case binding, and serialization before one agent turn starts."""
+"""Resolve idempotency and serialization before one agent turn starts."""
 
 from __future__ import annotations
 
@@ -20,11 +20,18 @@ from investigation_agent.application.thread_locks import (
 )
 from investigation_agent.core.context import RuntimeContext
 from investigation_agent.core.errors import IncompatibleStateFailure, translate_adapter_error
-from investigation_agent.domain.history import TurnStatus, stable_message_id, stable_turn_id
+from investigation_agent.domain.history import (
+    HistoryRole,
+    TurnStatus,
+    latest_turn_status,
+    stable_message_id,
+    stable_turn_id,
+)
 from investigation_agent.domain.investigation_state import (
     ControlState,
     IncompatibleStateError,
     InvestigationState,
+    TurnState,
     new_turn_state,
     parse_state,
     state_update,
@@ -38,11 +45,10 @@ APP_METADATA = "investigation"
 class InvokeRequest(BaseModel):
     """Public invocation fields; there is no caller identity in this prototype."""
 
-    model_config = ConfigDict(extra="ignore", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     request_id: str = Field(pattern=_ID_PATTERN)
     thread_id: str = Field(pattern=_ID_PATTERN)
-    case_id: str = Field(pattern=_ID_PATTERN)
     message: str = Field(min_length=1, max_length=64_000)
 
     @field_validator("message")
@@ -81,11 +87,6 @@ class ThreadBusy(InvocationConflict):
 class IdempotencyConflict(InvocationConflict):
     code = "idempotency_conflict"
     public_message = "The request ID was already used with different content."
-
-
-class ThreadCaseConflict(InvocationConflict):
-    code = "thread_case_conflict"
-    public_message = "The thread is already bound to another case."
 
 
 class ThreadFull(InvocationConflict):
@@ -208,7 +209,6 @@ class PreparedTurn:
     kind: PreparedTurnKind
     thread_id: str
     turn_id: str
-    case_id: str
     request_id: str
     graph: InvocationGraph
     config: Mapping[str, object]
@@ -229,16 +229,24 @@ class PreparedTurn:
     async def graph_events(self) -> AsyncIterator[object]:
         if self.kind in {PreparedTurnKind.REPLAY_COMPLETED, PreparedTurnKind.REPLAY_FAILED}:
             return
-        async with asyncio.timeout(self.turn_timeout_s):
-            async for event in self.graph.astream(
-                self.graph_input,
-                self.config,
-                context=self.context,
-                stream_mode=["updates", "custom"],
-                durability="sync",
-                version="v2",
-            ):
-                yield event
+        events = self.graph.astream(
+            self.graph_input,
+            self.config,
+            context=self.context,
+            stream_mode=["updates", "custom"],
+            durability="sync",
+            version="v2",
+        ).__aiter__()
+        deadline = asyncio.get_running_loop().time() + self.turn_timeout_s
+        while True:
+            # The budget wraps only the await: a scope spanning ``yield`` would expire while the
+            # consumer is suspended elsewhere and surface as a bare CancelledError instead.
+            try:
+                async with asyncio.timeout_at(deadline):
+                    event = await anext(events)
+            except StopAsyncIteration:
+                return
+            yield event
 
     async def latest_state(self) -> InvestigationState:
         if self.replay_state is not None:
@@ -301,7 +309,6 @@ class InvokeTurn:
     async def _prepare_locked(self, *, request: InvokeRequest, lease: ThreadLease) -> PreparedTurn:
         config = graph_config(
             thread_id=request.thread_id,
-            case_id=request.case_id,
             recursion_limit=self._policy.recursion_limit,
         )
         try:
@@ -310,9 +317,6 @@ class InvokeTurn:
             raise IncompatibleStateFailure from None
         except Exception as exc:
             raise translate_adapter_error(exc) from None
-        if state is not None and state.control.case_id != request.case_id:
-            raise ThreadCaseConflict
-
         kind, graph_input, replay_state = self._resolve_action(state=state, request=request)
         turn_id = stable_turn_id(request.thread_id, request.request_id)
         telemetry = self._attempt_telemetry(kind, state=state, request=request, turn_id=turn_id)
@@ -320,7 +324,6 @@ class InvokeTurn:
             graph_input = _with_trace_carrier(graph_input, telemetry.trace_carrier())
         cancellation = CancellationController.create()
         context = RuntimeContext(
-            case_id=request.case_id,
             thread_id=request.thread_id,
             request_id=request.request_id,
             deadline=self._clock() + timedelta(seconds=self._policy.turn_timeout_s),
@@ -332,7 +335,6 @@ class InvokeTurn:
             kind=kind,
             thread_id=request.thread_id,
             turn_id=turn_id,
-            case_id=request.case_id,
             request_id=request.request_id,
             graph=self._graph,
             config=config,
@@ -383,6 +385,14 @@ class InvokeTurn:
             if turn.status is TurnStatus.FAILED:
                 return PreparedTurnKind.REPLAY_FAILED, None, state
             return PreparedTurnKind.RESUME, None, None
+        prior = _prior_turn_from_history(state, request)
+        if prior is not None:
+            kind = (
+                PreparedTurnKind.REPLAY_COMPLETED
+                if prior.status is TurnStatus.COMPLETED
+                else PreparedTurnKind.REPLAY_FAILED
+            )
+            return kind, None, state.model_copy(update={"turn": prior})
         if self._thread_is_full(state):
             raise ThreadFull
         return PreparedTurnKind.NEW, self._new_turn_input(request, state=state), None
@@ -400,7 +410,6 @@ class InvokeTurn:
             request_id=request.request_id,
             message_id=stable_message_id(turn_id),
             utterance=request.message,
-            case_id=request.case_id,
             opened_at=self._clock(),
         )
         payload: dict[str, Any] = {
@@ -409,9 +418,7 @@ class InvokeTurn:
         if state is None:
             payload.update(
                 state_update(
-                    control=ControlState(
-                        case_id=request.case_id, policy_version=self._policy.policy_version
-                    ),
+                    control=ControlState(policy_version=self._policy.policy_version),
                     turn=turn,
                 )
             )
@@ -440,6 +447,38 @@ class _CleanupLease:
         await self._lease.release()
 
 
+def _prior_turn_from_history(state: InvestigationState, request: InvokeRequest) -> TurnState | None:
+    """Rebuild the turn view of an older request so it replays instead of starting a new turn.
+
+    The transcript stores no fingerprint, so the comparison reduces to the accepted user message
+    text. Only the current turn can still be running; any other non-completed turn is terminal for
+    its caller.
+    """
+
+    messages = [m for m in state.history.messages if m.request_id == request.request_id]
+    user = next((m for m in messages if m.role is HistoryRole.USER), None)
+    if user is None:
+        return None
+    if user.content != request.message:
+        raise IdempotencyConflict
+    assistant = next((m for m in messages if m.role is HistoryRole.ASSISTANT), None)
+    completed = latest_turn_status(state.history, user.turn_id) is TurnStatus.COMPLETED
+    turn = new_turn_state(
+        turn_id=user.turn_id,
+        request_id=request.request_id,
+        message_id=user.message_id,
+        utterance=user.content,
+        opened_at=user.created_at,
+    )
+    return turn.model_copy(
+        update={
+            "status": TurnStatus.COMPLETED if completed else TurnStatus.FAILED,
+            "assistant_message_id": assistant.message_id if assistant is not None else None,
+            "intake_complete": True,
+        }
+    )
+
+
 def _with_trace_carrier(
     graph_input: Mapping[str, Any], carrier: Mapping[str, str]
 ) -> dict[str, Any]:
@@ -453,20 +492,19 @@ def _with_trace_carrier(
 def request_fingerprint(request: InvokeRequest) -> str:
     return canonical_fingerprint(
         {
-            "version": 1,
+            "version": 2,
             "request_id": request.request_id,
-            "case_id": request.case_id,
             "message": request.message,
         }
     )
 
 
-def graph_config(*, thread_id: str, case_id: str, recursion_limit: int = 200) -> dict[str, Any]:
+def graph_config(*, thread_id: str, recursion_limit: int = 200) -> dict[str, Any]:
     """Public thread ID is the saver thread ID; metadata supports thread listing."""
 
     return {
         "configurable": {"thread_id": thread_id},
-        "metadata": {"app": APP_METADATA, "public_thread_id": thread_id, "case_id": case_id},
+        "metadata": {"app": APP_METADATA, "public_thread_id": thread_id},
         "recursion_limit": recursion_limit,
     }
 
@@ -488,7 +526,6 @@ __all__ = [
     "PreparedTurnKind",
     "RequestInProgress",
     "ThreadBusy",
-    "ThreadCaseConflict",
     "ThreadFull",
     "ThreadNotFound",
     "graph_config",

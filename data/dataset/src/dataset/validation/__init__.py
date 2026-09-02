@@ -12,14 +12,13 @@ from dataset.validation.structure import (
     validate_calendar_facts,
     validate_policy,
     validate_record_counts,
-    validate_stable_ids_and_case_namespace,
+    validate_stable_ids,
 )
 
 __all__ = ["validate_models"]
 
 
 def validate_models(
-    case_id: str,
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
     emails: list[dict[str, Any]],
@@ -30,9 +29,7 @@ def validate_models(
     ground_truth: dict[str, Any],
 ) -> None:
     validate_record_counts(cdr, extraction, emails, accounts, transactions, documents)
-    source_ids = validate_stable_ids_and_case_namespace(
-        case_id, cdr, extraction, emails, accounts, transactions, documents
-    )
+    source_ids = validate_stable_ids(cdr, extraction, emails, accounts, transactions, documents)
     validate_accounts_and_transactions(accounts, transactions)
     validate_cdr_structure(cdr, extraction)
     validate_reconciliation(cdr, extraction, transactions)
@@ -42,7 +39,7 @@ def validate_models(
     validate_golden_questions(ground_truth)
 
     validation_catalog = build_source_ref_catalog(
-        case_id, cdr, extraction, emails, accounts, transactions, documents
+        cdr, extraction, emails, accounts, transactions, documents
     )
-    validate_observable_layer(case_id, validation_catalog, ground_truth, source_ids)
+    validate_observable_layer(validation_catalog, ground_truth, source_ids)
     validate_calendar_facts()

@@ -5,7 +5,6 @@ import { mergeMessages, mergeThreads } from "./collections";
 
 const thread = (id: string): ThreadSummary => ({
   thread_id: id,
-  case_id: "case-1",
   turn_id: "turn-1",
   status: "completed",
   created_at: "2026-09-02T12:00:00Z",

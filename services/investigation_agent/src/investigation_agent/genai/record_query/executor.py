@@ -80,7 +80,6 @@ class ExecutorLimits:
 @dataclass(frozen=True, slots=True)
 class _CanonicalRecord:
     record_id: str
-    case_id: str
     content_hash: str
     text: str | None
     payload: Mapping[str, object]
@@ -89,7 +88,6 @@ class _CanonicalRecord:
 async def execute_guarded_select(
     *,
     pool: ReaderPool,
-    case_id: str,
     plan: SqlPlan,
     deadline: float,
     limits: ExecutorLimits | None = None,
@@ -109,7 +107,6 @@ async def execute_guarded_select(
         try:
             result = await _execute_once(
                 pool=pool,
-                case_id=case_id,
                 canonical_sql=validated.canonical_sql,
                 parameter_values=plan.parameter_values(),
                 parameter_count=validated.parameter_count,
@@ -117,34 +114,27 @@ async def execute_guarded_select(
                 limits=limits,
             )
             return result.model_copy(update={"physical_attempts": attempts})
-        except asyncio.CancelledError:
-            return GuardedSelectResult(
-                status="cancelled",
-                diagnostic=SafeDiagnostic(
-                    diagnostic_class=DiagnosticClass.CANCELLED,
-                    code="cancelled",
-                    correctable=False,
-                ),
-                physical_attempts=attempts,
-            )
         except Exception as error:
-            if _is_transient(error) and attempts < limits.max_physical_attempts:
-                await sleep(min(0.05 * (2 ** (attempts - 1)), _remaining(deadline)))
-                continue
-            return GuardedSelectResult(
-                status="failed",
-                diagnostic=_safe_database_diagnostic(error),
-                physical_attempts=attempts,
-            )
+            # asyncio.CancelledError is a BaseException and deliberately propagates so
+            # request-level cancellation and timeouts are never masked as a result.
+            if not _is_transient(error) or attempts >= limits.max_physical_attempts:
+                return _failed(_safe_database_diagnostic(error), attempts)
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return _failed(_timeout_diagnostic(), attempts)
+            await sleep(min(0.05 * (2 ** (attempts - 1)), remaining))
     raise AssertionError("bounded physical execution loop did not terminate")
+
+
+def _failed(diagnostic: SafeDiagnostic, attempts: int) -> GuardedSelectResult:
+    return GuardedSelectResult(status="failed", diagnostic=diagnostic, physical_attempts=attempts)
 
 
 async def _execute_once(
     *,
     pool: ReaderPool,
-    case_id: str,
     canonical_sql: str,
-    parameter_values: tuple[object, ...],
+    parameter_values: Sequence[object],
     parameter_count: int,
     deadline: float,
     limits: ExecutorLimits,
@@ -155,12 +145,10 @@ async def _execute_once(
             async with connection.cursor() as cursor:
                 await cursor.execute("SET TRANSACTION READ ONLY")
                 await cursor.execute(
-                    "SELECT set_config('app.case_id', $1, true), "
-                    "set_config('statement_timeout', $2, true), "
-                    "set_config('lock_timeout', $3, true), "
-                    "set_config('idle_in_transaction_session_timeout', $4, true)",
+                    "SELECT set_config('statement_timeout', $1, true), "
+                    "set_config('lock_timeout', $2, true), "
+                    "set_config('idle_in_transaction_session_timeout', $3, true)",
                     (
-                        case_id,
                         f"{limits.statement_timeout_ms}ms",
                         f"{limits.lock_timeout_ms}ms",
                         f"{limits.idle_transaction_timeout_ms}ms",
@@ -181,8 +169,8 @@ async def _execute_once(
                         rows_seen=0,
                         encoded_bytes=0,
                     )
-                records = await _load_canonical_records(cursor, case_id=case_id, rows=raw_rows)
-                evidence = _validate_provenance(raw_rows, case_id=case_id, records=records)
+                records = await _load_canonical_records(cursor, rows=raw_rows)
+                evidence = _validate_provenance(raw_rows, records=records)
                 return GuardedSelectResult(
                     status="ok",
                     rows=evidence,
@@ -232,7 +220,6 @@ async def _read_bounded_rows(
 async def _load_canonical_records(
     cursor: AsyncCursor,
     *,
-    case_id: str,
     rows: Sequence[Mapping[str, object]],
 ) -> dict[str, _CanonicalRecord]:
     record_ids: set[str] = set()
@@ -240,9 +227,9 @@ async def _load_canonical_records(
         refs = _parse_source_refs(row.get("source_refs"))
         record_ids.update(ref.record_id for ref in refs)
     await cursor.execute(
-        "SELECT record_id, case_id, content_hash, text, payload "
-        "FROM public.records WHERE case_id = $1 AND record_id = ANY($2::text[])",
-        (case_id, sorted(record_ids)),
+        "SELECT record_id, content_hash, text, payload "
+        "FROM public.records WHERE record_id = ANY($1::text[])",
+        (sorted(record_ids),),
     )
     records: dict[str, _CanonicalRecord] = {}
     for row in await cursor.fetchall():
@@ -250,7 +237,6 @@ async def _load_canonical_records(
         payload = row.get("payload")
         records[record_id] = _CanonicalRecord(
             record_id=record_id,
-            case_id=str(row["case_id"]),
             content_hash=str(row["content_hash"]),
             text=str(row["text"]) if row.get("text") is not None else None,
             payload=payload if isinstance(payload, Mapping) else {},
@@ -261,20 +247,14 @@ async def _load_canonical_records(
 def _validate_provenance(
     rows: Sequence[Mapping[str, object]],
     *,
-    case_id: str,
     records: Mapping[str, _CanonicalRecord],
 ) -> tuple[StructuredRowEvidence, ...]:
     evidence: list[StructuredRowEvidence] = []
     for row in rows:
-        row_case = row.get("case_id")
         record_id = row.get("record_id")
         content_hash = row.get("content_hash")
-        if (
-            row_case != case_id
-            or not isinstance(record_id, str)
-            or not isinstance(content_hash, str)
-        ):
-            raise ProvenanceValidationError("structured row has invalid trusted scope metadata")
+        if not isinstance(record_id, str) or not isinstance(content_hash, str):
+            raise ProvenanceValidationError("structured row has invalid provenance metadata")
         refs = _parse_source_refs(row.get("source_refs"))
         canonical = records.get(record_id)
         if canonical is None or canonical.content_hash != content_hash:
@@ -286,7 +266,7 @@ def _validate_provenance(
         fields = tuple(
             ResultField(name=str(name), value=_bounded_scalar(value))
             for name, value in sorted(row.items())
-            if name not in {"case_id", "content_hash", "source_refs"}
+            if name not in {"content_hash", "source_refs"}
         )
         digest = hashlib.sha256(
             json.dumps(
@@ -299,7 +279,6 @@ def _validate_provenance(
         evidence.append(
             StructuredRowEvidence(
                 evidence_id=f"row:{record_id}:{digest}",
-                case_id=case_id,
                 content_hash=content_hash,
                 source_refs=refs,
                 fields=fields,
@@ -356,6 +335,10 @@ def _remaining(deadline: float) -> float:
 
 
 def _is_transient(error: Exception) -> bool:
+    # QueryCanceled (statement_timeout) is an OperationalError but retrying it only
+    # burns the remaining deadline on a query that already proved too expensive.
+    if isinstance(error, psycopg.errors.QueryCanceled):
+        return False
     return isinstance(
         error,
         (
@@ -367,13 +350,17 @@ def _is_transient(error: Exception) -> bool:
     )
 
 
+def _timeout_diagnostic() -> SafeDiagnostic:
+    return SafeDiagnostic(
+        diagnostic_class=DiagnosticClass.RESOURCE_LIMIT,
+        code="query_timeout",
+        correctable=False,
+    )
+
+
 def _safe_database_diagnostic(error: Exception) -> SafeDiagnostic:
     if isinstance(error, TimeoutError | psycopg.errors.QueryCanceled):
-        return SafeDiagnostic(
-            diagnostic_class=DiagnosticClass.RESOURCE_LIMIT,
-            code="query_timeout",
-            correctable=False,
-        )
+        return _timeout_diagnostic()
     if isinstance(error, psycopg.errors.UndefinedColumn | psycopg.errors.UndefinedTable):
         return SafeDiagnostic(
             diagnostic_class=DiagnosticClass.SCHEMA,

@@ -39,7 +39,7 @@ class ConnectionFilters(StrictModel):
 
 
 class FindConnectionsInput(StrictModel):
-    """Model-authored graph request; trusted case scope is intentionally absent."""
+    """Model-authored graph request over the global evidence graph."""
 
     schema_version: Literal[1] = 1
     seed_entity_ids: Annotated[
@@ -69,14 +69,12 @@ class GraphLimits(StrictModel):
 
 
 class ResolvedSourceRef(StrictModel):
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     content_hash: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     source_ref: SourceRef
 
 
 class GraphNode(StrictModel):
     entity_id: Annotated[str, Field(min_length=1, max_length=256)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     entity_type: EntityType
     label: Annotated[str, Field(min_length=1, max_length=2_000)]
     sources: Annotated[tuple[ResolvedSourceRef, ...], Field(min_length=1, max_length=32)]
@@ -84,7 +82,6 @@ class GraphNode(StrictModel):
 
 class GraphEdge(StrictModel):
     relationship_id: Annotated[str, Field(min_length=1, max_length=256)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     subject_entity_id: Annotated[str, Field(min_length=1, max_length=256)]
     predicate: Predicate
     object_entity_id: Annotated[str, Field(min_length=1, max_length=256)]
@@ -108,7 +105,6 @@ class ConnectionPath(StrictModel):
 
 class GraphEvidence(StrictModel):
     evidence_id: Annotated[str, Field(min_length=1, max_length=512)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     content_hash: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     source_refs: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=1)]
     kind: Literal["entity", "relationship"]
@@ -149,7 +145,6 @@ class GraphReader(Protocol):
     async def load_graph_entities(
         self,
         *,
-        case_id: str,
         entity_ids: frozenset[str],
         row_limit: int,
         deadline: float,
@@ -158,7 +153,6 @@ class GraphReader(Protocol):
     async def load_graph_edges(
         self,
         *,
-        case_id: str,
         frontier_entity_ids: frozenset[str],
         filters: ConnectionFilters,
         row_limit: int,

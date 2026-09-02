@@ -24,13 +24,12 @@ from investigation_agent.genai.investigation.connections import (
 from investigation_agent.genai.record_query.schemas import QueryIntent, QueryOutcome
 
 
-def search_outcome(raw: SearchOutcome, *, case_id: str, intent: SearchIntent) -> ToolOutcome:
+def search_outcome(raw: SearchOutcome, *, intent: SearchIntent) -> ToolOutcome:
     fingerprint = canonical_fingerprint({"tool": "search_evidence", "intent": intent})
     evidence = tuple(
         EvidenceItem(
             evidence_id=item.evidence_id,
             kind="chunk",
-            case_id=item.case_id,
             content_hash=item.content_hash,
             source_refs=item.source_refs,
             content=item.content,
@@ -61,7 +60,6 @@ def search_outcome(raw: SearchOutcome, *, case_id: str, intent: SearchIntent) ->
         call_id=raw.call_id,
         intent_fingerprint=fingerprint,
         tool="search_evidence",
-        case_id=case_id,
         status=OutcomeStatus(raw.status),
         attempts=attempts,
         evidence=evidence,
@@ -71,13 +69,12 @@ def search_outcome(raw: SearchOutcome, *, case_id: str, intent: SearchIntent) ->
     )
 
 
-def query_outcome(raw: QueryOutcome, *, case_id: str, intent: QueryIntent) -> ToolOutcome:
+def query_outcome(raw: QueryOutcome, *, intent: QueryIntent) -> ToolOutcome:
     fingerprint = canonical_fingerprint({"tool": "query_records", "intent": intent})
     evidence = tuple(
         EvidenceItem(
             evidence_id=item.evidence_id,
             kind="row",
-            case_id=item.case_id,
             content_hash=item.content_hash,
             source_refs=item.source_refs,
             fields=tuple(
@@ -101,7 +98,6 @@ def query_outcome(raw: QueryOutcome, *, case_id: str, intent: QueryIntent) -> To
         call_id=raw.call_id,
         intent_fingerprint=fingerprint,
         tool="query_records",
-        case_id=case_id,
         status=OutcomeStatus(raw.status),
         attempts=attempts,
         evidence=evidence,
@@ -120,7 +116,6 @@ def _query_attempt_outcome(outcome: str) -> Literal["rejected", "failed", "succe
 def connections_outcome(
     raw: FindConnectionsOutcome,
     *,
-    case_id: str,
     request: FindConnectionsInput,
     physical_attempts: int = 1,
 ) -> ToolOutcome:
@@ -129,7 +124,6 @@ def connections_outcome(
         EvidenceItem(
             evidence_id=item.evidence_id,
             kind=item.kind,
-            case_id=item.case_id,
             content_hash=item.content_hash,
             source_refs=item.source_refs,
             content=item.content,
@@ -143,7 +137,6 @@ def connections_outcome(
         call_id=raw.call_id,
         intent_fingerprint=fingerprint,
         tool="find_connections",
-        case_id=case_id,
         status=OutcomeStatus(raw.status),
         attempts=(
             AttemptRecord(

@@ -21,7 +21,7 @@ from investigation_agent.genai.record_query.executor import (
     ReaderPool,
     execute_guarded_select,
 )
-from investigation_agent.genai.record_query.schemas import ParameterType, SqlParameter, SqlPlan
+from investigation_agent.genai.record_query.schemas import SqlPlan
 
 
 class _Embedder:
@@ -36,7 +36,7 @@ async def test_real_roles_enforce_privilege_matrix_and_readiness(
 ) -> None:
     readiness = await probe_database_readiness(
         database_pools,
-        expected_initializer_version="agent-runtime@1",
+        expected_initializer_version="agent-runtime@2",
         timeout_s=5,
     )
     assert readiness.ready
@@ -44,9 +44,9 @@ async def test_real_roles_enforce_privilege_matrix_and_readiness(
     await _assert_rejected(
         database_pools.reader,
         "INSERT INTO public.records "
-        "(record_id, case_id, source_system, source_record_id, record_type, payload, "
+        "(record_id, source_system, source_record_id, record_type, payload, "
         "source_path, content_hash) VALUES "
-        "('forbidden', 'case-a', 'x', 'x', 'x', '{}', '/x', 'aaaaaaaa')",
+        "('forbidden', 'x', 'x', 'x', '{}', '/x', 'aaaaaaaa')",
     )
     await _assert_rejected(database_pools.reader, "CREATE TEMP TABLE shadow(record_id text)")
     await _assert_rejected(database_pools.reader, "SELECT * FROM agent_runtime.checkpoints")
@@ -58,61 +58,46 @@ async def test_real_roles_enforce_privilege_matrix_and_readiness(
 
 
 @pytest.mark.asyncio
-async def test_case_scope_is_transaction_local_across_reused_reader_connection(
+async def test_global_view_is_readable_across_reused_reader_connection(
     database_pools: DatabasePools,
 ) -> None:
     plan = SqlPlan(
         sql=(
-            "SELECT record_id, case_id, content_hash, source_refs, amount_minor "
+            "SELECT record_id, content_hash, source_refs, amount_minor "
             "FROM agent_read.transactions_v1"
         ),
         expected_shape="rows",
     )
     deadline = asyncio.get_running_loop().time() + 10
     reader_pool = cast(ReaderPool, database_pools.reader)
-    case_a = await execute_guarded_select(
+    first = await execute_guarded_select(
         pool=reader_pool,
-        case_id="case-a",
         plan=plan,
         deadline=deadline,
         limits=ExecutorLimits(max_rows=10, max_bytes=20_000),
     )
-    case_b = await execute_guarded_select(
+    second = await execute_guarded_select(
         pool=reader_pool,
-        case_id="case-b",
         plan=plan,
         deadline=deadline,
         limits=ExecutorLimits(max_rows=10, max_bytes=20_000),
     )
-    contradictory = await execute_guarded_select(
-        pool=reader_pool,
-        case_id="case-a",
-        plan=SqlPlan(
-            sql=(
-                "SELECT record_id, case_id, content_hash, source_refs, amount_minor "
-                "FROM agent_read.transactions_v1 WHERE case_id = $1"
-            ),
-            parameters=(
-                SqlParameter(position=1, parameter_type=ParameterType.TEXT, value="case-b"),
-            ),
-            expected_shape="rows",
-        ),
-        deadline=deadline,
-        limits=ExecutorLimits(max_rows=10, max_bytes=20_000),
-    )
-
-    assert {row.case_id for row in case_a.rows} == {"case-a"}
-    assert {row.case_id for row in case_b.rows} == {"case-b"}
-    assert contradictory.status == "empty"
+    assert {
+        field.value for row in first.rows for field in row.fields if field.name == "record_id"
+    } == {
+        "bank:a",
+        "bank:b",
+    }
+    assert second.rows == first.rows
     async with database_pools.reader.connection() as connection:
         async with connection.transaction():
             async with connection.cursor() as cursor:
                 await cursor.execute("SELECT * FROM agent_read.transactions_v1")
-                assert await cursor.fetchall() == []
+                assert len(await cursor.fetchall()) == 2
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_and_graph_reads_never_cross_case(
+async def test_hybrid_search_and_graph_reads_cover_the_global_corpus(
     database_pools: DatabasePools,
 ) -> None:
     reader = PostgresEvidenceReader(database_pools.reader)
@@ -120,13 +105,12 @@ async def test_hybrid_search_and_graph_reads_never_cross_case(
     retrieval = await retrieve_hybrid(
         reader=reader,
         embedder=_Embedder(),
-        case_id="case-a",
         query=RetrievalQuery(query="alpha", top_k=10),
         excluded_chunk_ids=frozenset(),
         deadline=deadline,
         policy=FusionPolicy(),
     )
-    assert {item.chunk_id for item in retrieval.candidates} == {"chunk:case-a"}
+    assert {item.chunk_id for item in retrieval.candidates} == {"chunk:bank:a", "chunk:bank:b"}
     assert len(retrieval.candidates[0].contributions) == 2
 
     graph = await FindConnections(
@@ -140,9 +124,8 @@ async def test_hybrid_search_and_graph_reads_never_cross_case(
         ),
     ).run(
         call_id="graph-integration",
-        case_id="case-a",
         request=FindConnectionsInput(
-            seed_entity_ids=("case-a:entity:1", "case-b:entity:1"),
+            seed_entity_ids=("bank:a:entity:1", "bank:b:entity:1"),
             filters=ConnectionFilters(),
             max_depth=2,
             max_paths=5,
@@ -153,8 +136,12 @@ async def test_hybrid_search_and_graph_reads_never_cross_case(
         deadline=deadline,
     )
     assert graph.status == "connections_found"
-    assert {node.case_id for node in graph.nodes} == {"case-a"}
-    assert all("case-b" not in node_id for path in graph.paths for node_id in path.node_ids)
+    assert {node.entity_id for node in graph.nodes} == {
+        "bank:a:entity:1",
+        "bank:a:entity:2",
+        "bank:b:entity:1",
+        "bank:b:entity:2",
+    }
 
 
 async def _assert_rejected(pool: object, statement: str) -> None:

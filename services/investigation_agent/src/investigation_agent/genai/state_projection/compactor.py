@@ -11,7 +11,6 @@ from investigation_agent.genai.shared.retries import (
     CancellationToken,
     OperationCancelledError,
     RetryPolicy,
-    TransientExhaustedError,
     retry_async,
 )
 from investigation_agent.genai.state_projection.schemas import ProjectionInput
@@ -154,10 +153,16 @@ async def run_projection(
         try:
             repaired = await invoke(first.violations)
             valid = validate_projection(repaired, request, state)
-        except (ProjectionValidationError, TransientExhaustedError, OperationCancelledError):
+        except OperationCancelledError:
+            raise
+        except Exception:
+            # A second unusable replacement, transient exhaustion, or a malformed model
+            # output all leave the validated predecessor in place; the turn is not lost.
             return ProjectionResult(stale_projection(request), 2, total_attempts, True)
         return ProjectionResult(valid, 2, total_attempts, False)
-    except (TransientExhaustedError, OperationCancelledError):
+    except OperationCancelledError:
+        raise
+    except Exception:
         return ProjectionResult(stale_projection(request), 1, total_attempts, True)
 
 

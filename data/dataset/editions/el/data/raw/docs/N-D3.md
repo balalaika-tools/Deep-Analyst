@@ -1,6 +1,5 @@
 ---
 document_id: N-D3
-case_id: case_trg_001
 document_date: 2026-03-08
 genre: accounts_payable_exception
 source_reliability: high

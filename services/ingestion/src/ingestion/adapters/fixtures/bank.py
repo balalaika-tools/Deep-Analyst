@@ -23,11 +23,11 @@ SOURCE_SYSTEM = "bank"
 RELATIVE_PATH = "raw/bank.sql"
 STAGING_SCHEMA = "bank_raw"
 _ACCOUNT_COLUMNS = (
-    "case_id", "account_id", "iban", "holder_name", "holder_type", "bic", "opened_date",
+    "account_id", "iban", "holder_name", "holder_type", "bic", "opened_date",
     "source_version",
 )  # fmt: skip
 _TRANSACTION_COLUMNS = (
-    "case_id", "txn_id", "booking_ts_utc", "value_date", "debtor_name", "debtor_iban",
+    "txn_id", "booking_ts_utc", "value_date", "debtor_name", "debtor_iban",
     "debtor_bic", "creditor_name", "creditor_iban", "creditor_bic", "amount_text", "currency",
     "status", "remittance_info", "source_version",
 )  # fmt: skip
@@ -41,11 +41,10 @@ def strip_transaction_control(script: str) -> str:
     )
 
 
-def _account(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, AccountProjection]:
+def _account(row: dict[str, Any]) -> tuple[SourceRecord, AccountProjection]:
     iban = normalize_iban(str(row["iban"]))
     payload: dict[str, Any] = {**row, "normalized": {"iban": iban}}
     record = SourceRecord(
-        case_id=case_id,
         source_system=SOURCE_SYSTEM,
         source_record_id=str(row["account_id"]),
         record_type="account",
@@ -59,7 +58,6 @@ def _account(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, AccountPr
     opened = row.get("opened_date")
     projection = AccountProjection(
         record_id=record.record_id,
-        case_id=case_id,
         account_id=str(row["account_id"]),
         iban=iban,
         holder_name=row.get("holder_name"),
@@ -70,7 +68,7 @@ def _account(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, AccountPr
     return record, projection
 
 
-def _transaction(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, TransactionProjection]:
+def _transaction(row: dict[str, Any]) -> tuple[SourceRecord, TransactionProjection]:
     booking = to_utc(str(row["booking_ts_utc"]))
     amount_minor = money_to_minor_units(str(row["amount_text"]), str(row["currency"]))
     remittance = row.get("remittance_info")
@@ -89,7 +87,6 @@ def _transaction(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, Trans
         },
     }
     record = SourceRecord(
-        case_id=case_id,
         source_system=SOURCE_SYSTEM,
         source_record_id=str(row["txn_id"]),
         record_type="transaction",
@@ -102,7 +99,6 @@ def _transaction(case_id: str, row: dict[str, Any]) -> tuple[SourceRecord, Trans
     )
     projection = TransactionProjection(
         record_id=record.record_id,
-        case_id=case_id,
         txn_id=str(row["txn_id"]),
         booking_ts_utc=booking,
         value_date=date.fromisoformat(str(row["value_date"])),
@@ -130,7 +126,7 @@ async def _rows(
     return [dict(zip(columns, row, strict=True)) for row in result.all()]
 
 
-async def load_bank(conn: AsyncConnection, edition_dir: Path, case_id: str) -> SourceBatch:
+async def load_bank(conn: AsyncConnection, edition_dir: Path) -> SourceBatch:
     """Execute the fixture SQL in `bank_raw`, read it back, then drop the schema."""
     script = strip_transaction_control((edition_dir / RELATIVE_PATH).read_text(encoding="utf-8"))
     await conn.execute(text(f"DROP SCHEMA IF EXISTS {STAGING_SCHEMA} CASCADE"))
@@ -138,12 +134,9 @@ async def load_bank(conn: AsyncConnection, edition_dir: Path, case_id: str) -> S
     await conn.execute(text(f"SET LOCAL search_path TO {STAGING_SCHEMA}, public"))
     try:
         await conn.exec_driver_sql(script)
-        accounts = [
-            _account(case_id, row) for row in await _rows(conn, "accounts", _ACCOUNT_COLUMNS)
-        ]
+        accounts = [_account(row) for row in await _rows(conn, "accounts", _ACCOUNT_COLUMNS)]
         transactions = [
-            _transaction(case_id, row)
-            for row in await _rows(conn, "transactions", _TRANSACTION_COLUMNS)
+            _transaction(row) for row in await _rows(conn, "transactions", _TRANSACTION_COLUMNS)
         ]
     finally:
         await conn.execute(text(f"DROP SCHEMA IF EXISTS {STAGING_SCHEMA} CASCADE"))

@@ -5,15 +5,13 @@ from ingestion.adapters.fixtures.bank import STAGING_SCHEMA, load_bank, strip_tr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-CASE = "case_trg_001"
-
 
 @pytest.mark.asyncio
 async def test_bank_sql_loads_18_accounts_and_35_transactions_and_drops_the_staging_schema(
     engine: AsyncEngine, edition_dir: Path
 ) -> None:
     async with engine.begin() as conn:
-        batch = await load_bank(conn, edition_dir, CASE)
+        batch = await load_bank(conn, edition_dir)
         schemas = await conn.execute(
             text("SELECT count(*) FROM pg_namespace WHERE nspname = :name"),
             {"name": STAGING_SCHEMA},

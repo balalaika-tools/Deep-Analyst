@@ -2,12 +2,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ingestion.adapters.filesystem.receipt import FileReceiptStore
-from ingestion.ports.ingestion_ledger import ChunkingConfig, Receipt, compute_fingerprint
+from ingestion.ports.ingestion_ledger import (
+    ChunkingConfig,
+    Receipt,
+    compute_fingerprint,
+    compute_source_digest,
+)
 
 
 def _fingerprint(**overrides: object) -> str:
     values: dict[str, object] = {
         "manifest_bytes": b'{"dataset_version": "v1"}',
+        "source_digest": "source-v1",
         "embedding_model_id": "amazon.titan-embed-text-v2:0",
         "chunking": ChunkingConfig(window_chars=4000, overlap_chars=200),
         "pipeline_version": "ingestion@1",
@@ -20,10 +26,25 @@ def test_fingerprint_changes_with_every_input_and_is_otherwise_stable() -> None:
     base = _fingerprint()
     assert base == _fingerprint()
     assert base != _fingerprint(manifest_bytes=b'{"dataset_version": "v2"}')
+    assert base != _fingerprint(source_digest="source-v2")
     assert base != _fingerprint(embedding_model_id="other-model")
     assert base != _fingerprint(chunking=ChunkingConfig(window_chars=400, overlap_chars=200))
     assert base != _fingerprint(chunking=ChunkingConfig(window_chars=4000, overlap_chars=50))
     assert base != _fingerprint(pipeline_version="ingestion@2")
+
+
+def test_source_digest_changes_only_when_python_sources_change(tmp_path: Path) -> None:
+    package = tmp_path / "ingestion"
+    package.mkdir()
+    source = package / "main.py"
+    source.write_text("VALUE = 1\n")
+    baseline = compute_source_digest(package)
+
+    (package / "ignored.txt").write_text("not runtime code")
+    assert compute_source_digest(package) == baseline
+
+    source.write_text("VALUE = 2\n")
+    assert compute_source_digest(package) != baseline
 
 
 def test_receipt_round_trips_and_absent_or_malformed_reads_as_none(tmp_path: Path) -> None:

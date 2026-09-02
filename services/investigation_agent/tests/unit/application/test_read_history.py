@@ -128,11 +128,10 @@ def _running_history_state() -> InvestigationState:
         request_id="request-2",
         message_id=user_2,
         utterance="Phone +30 210 000 0000 and account 77",
-        case_id="case-1",
         opened_at=NOW + timedelta(minutes=1),
     )
     return InvestigationState(
-        control=ControlState(case_id="case-1", policy_version="policy-v1"),
+        control=ControlState(policy_version="policy-v1"),
         turn=turn,
         history=history,
     )
@@ -157,7 +156,6 @@ def _thread(
         request_id=request_id,
         message_id=message_id,
         utterance="Question",
-        case_id="case-1",
         opened_at=created_at,
     ).model_copy(update={"status": status})
     if status is TurnStatus.COMPLETED:
@@ -171,7 +169,7 @@ def _thread(
         )
         turn = turn.model_copy(update={"assistant_message_id": f"assistant-{request_id}"})
     return InvestigationState(
-        control=ControlState(case_id="case-1", policy_version="policy-v1"),
+        control=ControlState(policy_version="policy-v1"),
         turn=turn,
         history=history,
     )
@@ -201,7 +199,7 @@ def _record(
 ) -> FakeCheckpoint:
     return FakeCheckpoint(
         checkpoint={"ts": checkpoint_at.isoformat(), "channel_values": state.as_update()},
-        metadata={"app": app, "public_thread_id": thread_id, "case_id": "case-1"},
+        metadata={"app": app, "public_thread_id": thread_id},
     )
 
 
@@ -318,8 +316,8 @@ async def test_thread_list_uses_app_filter_keeps_newest_checkpoint_and_pages_sta
     first = await reader.list_threads(page_size=1)
     second = await reader.list_threads(cursor=first.next_cursor, page_size=1)
 
-    assert [(item.thread_id, item.status, item.case_id) for item in first.items] == [
-        ("thread-b", TurnStatus.COMPLETED, "case-1")
+    assert [(item.thread_id, item.status) for item in first.items] == [
+        ("thread-b", TurnStatus.COMPLETED)
     ]
     assert [(item.thread_id, item.status) for item in second.items] == [
         ("thread-a", TurnStatus.INTERRUPTED)
@@ -329,7 +327,6 @@ async def test_thread_list_uses_app_filter_keeps_newest_checkpoint_and_pages_sta
     assert checkpointer.limits == [20, 20]
     assert set(first.model_dump(mode="json")["items"][0]) == {
         "thread_id",
-        "case_id",
         "turn_id",
         "status",
         "created_at",

@@ -31,7 +31,6 @@ def _card(evidence_id: str, *, kind: str = "row", status: str = "verified") -> E
     return EvidenceCard(
         evidence_id=evidence_id,
         kind=kind,
-        case_id="case-1",
         content_hash=canonical_fingerprint(evidence_id),
         source_refs=(SourceRef(record_id="record-1", locator=FieldLocator(field="amount")),),
         evidentiary_status=status,
@@ -44,7 +43,7 @@ def _card(evidence_id: str, *, kind: str = "row", status: str = "verified") -> E
 
 def _state(*cards: EvidenceCard) -> InvestigationState:
     return InvestigationState(
-        control=ControlState(case_id="case-1", policy_version="v1"),
+        control=ControlState(policy_version="v1"),
         evidence=EvidenceIndex(cards={card.evidence_id: card for card in cards}),
     )
 
@@ -238,3 +237,92 @@ async def test_no_model_call_starts_after_cancellation_or_without_closure_reserv
         can_start_model=lambda: False,
     )
     assert result.stale and started == 0
+
+
+@pytest.mark.asyncio
+async def test_malformed_model_output_keeps_the_prior_projection_instead_of_crashing() -> None:
+    state = _state(_card("evidence-1"))
+    request = _request(state)
+    calls: list[tuple[str, ...]] = []
+
+    async def malformed_model(
+        req: ProjectionInput, *, repair_violations: tuple[str, ...] = ()
+    ) -> WorkingProjection:
+        calls.append(repair_violations)
+        return WorkingProjection.model_validate({"user_goal": 1234, "unknown": True})
+
+    policy = RetryPolicy(
+        max_attempts=2, initial_delay_s=0, backoff_factor=1, max_delay_s=0, jitter=False
+    )
+    result = await run_projection(
+        request,
+        state,
+        model=malformed_model,
+        retry_policy=policy,
+        transient_errors=(TimeoutError,),
+        cancellation=CancellationToken.create(),
+        deadline=asyncio.get_running_loop().time() + 5,
+    )
+
+    assert result.stale is True
+    assert result.projection == request.predecessor.model_copy(update={"projection_stale": True})
+    assert calls == [()]
+
+
+@pytest.mark.asyncio
+async def test_cancellation_during_projection_propagates() -> None:
+    from investigation_agent.genai.shared.retries import OperationCancelledError
+
+    state = _state(_card("evidence-1"))
+    request = _request(state)
+
+    async def cancelled_model(
+        req: ProjectionInput, *, repair_violations: tuple[str, ...] = ()
+    ) -> WorkingProjection:
+        del req, repair_violations
+        raise OperationCancelledError
+
+    with pytest.raises(OperationCancelledError):
+        await run_projection(
+            request,
+            state,
+            model=cancelled_model,
+            retry_policy=RetryPolicy(
+                max_attempts=1,
+                initial_delay_s=0,
+                backoff_factor=1,
+                max_delay_s=0,
+                jitter=False,
+            ),
+            transient_errors=(),
+            cancellation=CancellationToken.create(),
+            deadline=asyncio.get_running_loop().time() + 5,
+        )
+
+
+@pytest.mark.asyncio
+async def test_malformed_repair_output_after_a_validation_failure_also_stays_stale() -> None:
+    state = _state(_card("evidence-1"))
+    request = _request(state)
+
+    async def model(
+        req: ProjectionInput, *, repair_violations: tuple[str, ...] = ()
+    ) -> WorkingProjection:
+        if not repair_violations:
+            return _candidate(evidence_id="invented")
+        return WorkingProjection.model_validate({"user_goal": object()})
+
+    policy = RetryPolicy(
+        max_attempts=1, initial_delay_s=0, backoff_factor=1, max_delay_s=0, jitter=False
+    )
+    result = await run_projection(
+        request,
+        state,
+        model=model,
+        retry_policy=policy,
+        transient_errors=(TimeoutError,),
+        cancellation=CancellationToken.create(),
+        deadline=asyncio.get_running_loop().time() + 5,
+    )
+
+    assert result.stale is True and result.model_calls == 2

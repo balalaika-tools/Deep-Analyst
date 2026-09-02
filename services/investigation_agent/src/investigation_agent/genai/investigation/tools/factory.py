@@ -1,4 +1,4 @@
-"""Bind the three case-scoped investigation tools."""
+"""Bind the three global-corpus investigation tools."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def build_investigation_tools(deps: ToolDependencies) -> list[BaseTool]:
     async def search_evidence(
         intent: SearchIntent, runtime: ToolRuntime[RuntimeContext, Any]
     ) -> tuple[str, ToolOutcome]:
-        """Hybrid lexical and semantic search over the case's text evidence."""
+        """Hybrid lexical and semantic search over the global text evidence."""
 
         context = runtime.context
         context.check_active()
@@ -58,20 +58,19 @@ def build_investigation_tools(deps: ToolDependencies) -> list[BaseTool]:
         raw = await deps.search.run(
             intent,
             call_id=runtime.tool_call_id or "search_evidence",
-            case_id=context.case_id,
             deadline=loop_deadline(context),
             cancellation=cancellation_token(context),
             seen_chunk_ids=_seen_chunk_ids(runtime.state),
             progress=progress,
         )
-        outcome = search_outcome(raw, case_id=context.case_id, intent=intent)
+        outcome = search_outcome(raw, intent=intent)
         return outcome.status.value, outcome
 
     @tool(response_format="content_and_artifact")
     async def query_records(
         intent: QueryIntent, runtime: ToolRuntime[RuntimeContext, Any]
     ) -> tuple[str, ToolOutcome]:
-        """Query the case's structured records through policy-gated SQL."""
+        """Query global structured records through policy-gated SQL."""
 
         context = runtime.context
         context.check_active()
@@ -80,19 +79,18 @@ def build_investigation_tools(deps: ToolDependencies) -> list[BaseTool]:
         raw = await deps.query.run(
             intent,
             call_id=runtime.tool_call_id or "query_records",
-            case_id=context.case_id,
             deadline=loop_deadline(context),
             cancellation=cancellation_token(context),
             progress=progress,
         )
-        outcome = query_outcome(raw, case_id=context.case_id, intent=intent)
+        outcome = query_outcome(raw, intent=intent)
         return outcome.status.value, outcome
 
     @tool(response_format="content_and_artifact")
     async def find_connections(
         request: FindConnectionsInput, runtime: ToolRuntime[RuntimeContext, Any]
     ) -> tuple[str, ToolOutcome]:
-        """Traverse sourced case relationships within server-owned bounds."""
+        """Traverse sourced global relationships within server-owned bounds."""
 
         context = runtime.context
         context.check_active()
@@ -103,9 +101,7 @@ def build_investigation_tools(deps: ToolDependencies) -> list[BaseTool]:
 
         async def read(attempt: int) -> FindConnectionsOutcome:
             del attempt
-            return await deps.connections.run(
-                call_id=call_id, case_id=context.case_id, request=request, deadline=deadline
-            )
+            return await deps.connections.run(call_id=call_id, request=request, deadline=deadline)
 
         result = await retry_async(
             read,
@@ -116,7 +112,6 @@ def build_investigation_tools(deps: ToolDependencies) -> list[BaseTool]:
         )
         outcome = connections_outcome(
             result.value,
-            case_id=context.case_id,
             request=request,
             physical_attempts=result.attempts,
         )

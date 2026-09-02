@@ -6,7 +6,6 @@ import type { ThreadSummary } from "@/features/investigations/contracts";
 interface ThreadSidebarProps {
   threads: ThreadSummary[];
   activeThreadId: string | null;
-  activeCaseId: string;
   activeTurn: boolean;
   nextCursor: string | null;
   loadingMore: boolean;
@@ -25,7 +24,6 @@ const DATE_FORMAT = new Intl.DateTimeFormat("en", {
 export function ThreadSidebar({
   threads,
   activeThreadId,
-  activeCaseId,
   activeTurn,
   nextCursor,
   loadingMore,
@@ -43,9 +41,9 @@ export function ThreadSidebar({
         </div>
       </div>
 
-      <Link className="new-thread-button" href={`/cases/${encodeURIComponent(activeCaseId)}`} onClick={onNavigate}>
+      <Link className="new-thread-button" href="/" onClick={onNavigate}>
         <PlusIcon />
-        New investigation
+        New conversation
       </Link>
 
       <div className="sidebar-heading">
@@ -68,11 +66,12 @@ export function ThreadSidebar({
                 <li className="thread-row" key={thread.thread_id}>
                   <Link
                     aria-current={active ? "page" : undefined}
+                    aria-label={`Conversation ${thread.thread_id} ${DATE_FORMAT.format(new Date(thread.created_at))} ${thread.status}`}
                     className={`thread-link${active ? " is-active" : ""}`}
-                    href={`/cases/${encodeURIComponent(thread.case_id)}/threads/${encodeURIComponent(thread.thread_id)}`}
+                    href={`/threads/${encodeURIComponent(thread.thread_id)}`}
                     onClick={onNavigate}
                   >
-                    <span className="thread-case">{thread.case_id}</span>
+                    <span className="thread-case">Conversation</span>
                     <span className="thread-meta">
                       <time dateTime={thread.created_at}>{DATE_FORMAT.format(new Date(thread.created_at))}</time>
                       <span className={`status-dot status-${thread.status}`} aria-hidden="true" />
@@ -80,7 +79,7 @@ export function ThreadSidebar({
                     </span>
                   </Link>
                   <button
-                    aria-label={`Delete conversation for ${thread.case_id}`}
+                    aria-label={`Delete conversation ${thread.thread_id}`}
                     className="thread-delete"
                     disabled={active && activeTurn}
                     onClick={() => onDelete(thread)}

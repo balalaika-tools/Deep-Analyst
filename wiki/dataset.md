@@ -2,20 +2,20 @@
 
 ## Purpose
 
-`trg-synth` is the deterministic, synthetic case used to build and evaluate the investigation
-assistant. It combines communications, bank activity, email, and case documents that only become
+`trg-synth` is the deterministic synthetic dataset used to build and evaluate the investigation
+assistant. It combines communications, bank activity, email, and investigation documents that only become
 useful once evidence from several sources is connected — exactly the shape of problem the
 [Data Layer](data-layer.md) and [Agent Layer](agent-layer.md) are built to handle.
 
 Every person, organization, identifier, transaction, and event is fictional, including
 format-valid phone numbers, IBANs, and BICs generated only to exercise validation code. This is a
-software fixture, not a statistical model of real cases.
+software fixture, not a statistical model of real investigations.
 
 ## At a glance
 
 | Property | Value |
 |---|---|
-| Case | `case_trg_001` |
+| Identity | Global source-qualified IDs from canonical seed `20260305` |
 | Canonical seed | `20260305` |
 | Activity window | 20 February to 10 March 2026 |
 | English edition | `trg-synth-en-v1.0.0` (the prototype's active edition) |
@@ -30,7 +30,7 @@ software fixture, not a statistical model of real cases.
 |---|---|---:|---|
 | Carrier communications | `cdr.csv` | 55 | Call and SMS metadata; no message body |
 | Device extraction | `extraction.jsonl` | 18 | SMS and app messages with device context |
-| Email | `.eml` | 6 | Headers, subject, body, and case metadata |
+| Email | `.eml` | 6 | Headers, subject, body, and source metadata |
 | Accounts | `bank.sql` | 18 | IBAN, holder, BIC, and opening date |
 | Transactions | `bank.sql` | 35 | Accounts, exact amount, time, status, and remittance |
 | Case documents | Markdown | 10 | Surveillance, KYC, SAR, invoice, and background reports |

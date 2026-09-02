@@ -36,7 +36,7 @@ async def test_both_extractors_return_well_formed_candidates_for_r01(edition_dir
         pytest.fail(f"live test needs the full ingestion environment: {exc}")
     r01 = next(
         r
-        for r in load_documents(edition_dir, "case_trg_001").records
+        for r in load_documents(edition_dir).records
         if r.source_record_id == "R-01"
     )
     assert r01.text is not None

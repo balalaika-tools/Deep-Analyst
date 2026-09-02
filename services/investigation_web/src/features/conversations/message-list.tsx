@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { SparkIcon } from "@/components/icons";
 import type { Citation, MessageItem, ProgressPhase } from "@/features/investigations/contracts";
+import { AnswerContent } from "./answer-content";
 import { isTurnActive, type TurnState } from "./turn-state";
 
 const PROGRESS_LABELS: Record<ProgressPhase, string> = {
@@ -26,30 +27,63 @@ interface MessageListProps {
 }
 
 function CitationList({ citations }: { citations: Citation[] }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
   if (citations.length === 0) return null;
   return (
-    <details className="citations">
-      <summary>{citations.length} source{citations.length === 1 ? "" : "s"}</summary>
-      <ol>
-        {citations.map((citation) => (
-          <li key={`${citation.evidence_id}:${citation.content_hash}`}>
-            <strong>{citation.evidence_id}</strong>
-            <span>Record {citation.source_ref.record_id}</span>
-            <span>Field {citation.source_ref.locator.field}</span>
-          </li>
-        ))}
-      </ol>
-    </details>
+    <section className={`citations${open ? " is-open" : ""}`}>
+      <button
+        aria-controls={contentId}
+        aria-expanded={open}
+        className="citation-summary"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className="citation-summary-icon" aria-hidden="true">⌁</span>
+        <span>{citations.length} evidence source{citations.length === 1 ? "" : "s"}</span>
+        <span className="citation-summary-hint">{open ? "Hide details" : "View details"}</span>
+        <span className="citation-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div className="citation-disclosure" id={contentId}>
+        <div className="citation-disclosure-inner">
+          <ol>
+            {citations.map((citation) => (
+              <li key={`${citation.evidence_id}:${citation.content_hash}`}>
+                <span className="citation-index" aria-hidden="true" />
+                <span className="citation-copy">
+                  <strong>{citation.evidence_id}</strong>
+                  <span>Record {citation.source_ref.record_id} · Field {citation.source_ref.locator.field}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
   );
 }
 
 function Message({ message }: { message: MessageItem }) {
   const assistant = message.role === "assistant";
+  const completedAnswer = assistant && message.turn_status === "completed";
+  const titleId = `answer-${message.message_id}`;
   return (
-    <article className={`message message-${message.role}`} aria-label={`${message.role} message`}>
+    <article
+      aria-label={`${message.role} message`}
+      aria-labelledby={completedAnswer ? titleId : undefined}
+      className={`message message-${message.role}${completedAnswer ? " is-final" : ""}`}
+    >
       {assistant ? <span className="assistant-avatar"><SparkIcon /></span> : null}
       <div className="message-body">
-        <div className="message-copy">{message.content}</div>
+        {completedAnswer ? (
+          <div className="answer-header">
+            <h2 id={titleId}>Verified response</h2>
+            <span className="verified-badge"><span aria-hidden="true">✓</span> Evidence checked</span>
+          </div>
+        ) : null}
+        <div className="message-copy">
+          {completedAnswer ? <AnswerContent content={message.content} /> : message.content}
+        </div>
         <div className="message-footer">
           <time dateTime={message.created_at}>
             {new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.created_at))}
@@ -123,10 +157,19 @@ export function MessageList({ messages, turn, nextCursor, loadingMore, onLoadMor
       ) : null}
       {showActivity ? <InvestigationActivity phase={turn.progress} /> : null}
       {showAssistant ? (
-        <article className="message message-assistant is-streaming" aria-label="Streaming assistant message">
+        <article className={`message message-assistant is-streaming${turn.phase === "completed" ? " is-final" : ""}`} aria-label="Streaming assistant message">
           <span className="assistant-avatar"><SparkIcon /></span>
           <div className="message-body">
-            <div className="message-copy">{turn.answer}<span className="stream-caret" aria-hidden="true" /></div>
+            {turn.phase === "completed" ? (
+              <div className="answer-header">
+                <h2>Verified response</h2>
+                <span className="verified-badge"><span aria-hidden="true">✓</span> Evidence checked</span>
+              </div>
+            ) : null}
+            <div className="message-copy">
+              {turn.phase === "completed" ? <AnswerContent content={turn.answer} /> : turn.answer}
+              {turn.phase !== "completed" ? <span className="stream-caret" aria-hidden="true" /> : null}
+            </div>
             {turn.phase === "completed" ? <CitationList citations={turn.citations} /> : null}
           </div>
         </article>

@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
-CASE_ID = "case_trg_001"
 PROSE_RECORD_TYPES: frozenset[str] = frozenset({"document", "email", "extraction_message"})
 
 
@@ -21,7 +20,6 @@ def content_hash(payload: dict[str, Any]) -> str:
 class SourceRecord:
     """The common evidence envelope for one source item."""
 
-    case_id: str
     source_system: str
     source_record_id: str
     record_type: str
@@ -44,7 +42,6 @@ class SourceRecord:
 @dataclass(frozen=True, slots=True)
 class CommunicationProjection:
     record_id: str
-    case_id: str
     channel: str
     direction: str
     from_endpoint: str
@@ -60,7 +57,6 @@ class CommunicationProjection:
 @dataclass(frozen=True, slots=True)
 class AccountProjection:
     record_id: str
-    case_id: str
     account_id: str
     iban: str
     holder_name: str | None
@@ -72,7 +68,6 @@ class AccountProjection:
 @dataclass(frozen=True, slots=True)
 class TransactionProjection:
     record_id: str
-    case_id: str
     txn_id: str
     booking_ts_utc: datetime
     value_date: date

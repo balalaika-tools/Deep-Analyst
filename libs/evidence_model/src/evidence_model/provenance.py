@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class TextSpanLocator(BaseModel):
     """A character span inside one text field of a record, with the quoted text."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["text_span"] = "text_span"
     field: str
@@ -35,7 +35,7 @@ class TextSpanLocator(BaseModel):
 class FieldLocator(BaseModel):
     """A structured field of a record."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["field"] = "field"
     field: str
@@ -45,7 +45,7 @@ type Locator = Annotated[TextSpanLocator | FieldLocator, Field(discriminator="ki
 
 
 class SourceRef(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     record_id: str
     locator: Locator

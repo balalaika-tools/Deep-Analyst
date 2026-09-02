@@ -5,7 +5,7 @@ from typing import Any
 
 from dataset.core.constants import DEFAULT_LOCALE
 from dataset.core.state import _activate_locale
-from dataset.core.util import _case_namespace, _require
+from dataset.core.util import _require, _variant_id
 from dataset.ground_truth import build_ground_truth
 from dataset.provenance import build_source_ref_catalog
 from dataset.quarantine import build_previews, build_quarantine
@@ -25,24 +25,23 @@ def _build_dataset_models(seed: int, locale: str = DEFAULT_LOCALE) -> dict[str, 
     """Build and validate every in-memory model used by a dataset release."""
     _require(type(seed) is int, "rng seed must be an integer")
     _activate_locale(locale)
-    case_id, variant_id = _case_namespace(seed)
+    variant_id = _variant_id(seed)
     rng = random.Random(seed)
-    accounts = build_accounts(case_id)
-    transactions = build_transactions(case_id, accounts)
-    cdr = build_cdr(case_id, rng)
-    extraction = build_extraction(case_id)
-    emails = build_emails(case_id)
-    documents = build_documents(case_id)
+    accounts = build_accounts()
+    transactions = build_transactions(accounts)
+    cdr = build_cdr(rng)
+    extraction = build_extraction()
+    emails = build_emails()
+    documents = build_documents()
     policy = build_policy()
     ref_catalog = build_source_ref_catalog(
-        case_id, cdr, extraction, emails, accounts, transactions, documents
+        cdr, extraction, emails, accounts, transactions, documents
     )
-    ground_truth = build_ground_truth(case_id, ref_catalog, cdr, extraction)
-    quarantine_files, quarantine_expected = build_quarantine(case_id)
-    previews = build_previews(case_id, cdr, extraction, emails, accounts, transactions, documents)
+    ground_truth = build_ground_truth(ref_catalog, cdr, extraction)
+    quarantine_files, quarantine_expected = build_quarantine()
+    previews = build_previews(cdr, extraction, emails, accounts, transactions, documents)
 
     validate_models(
-        case_id,
         cdr,
         extraction,
         emails,
@@ -54,7 +53,6 @@ def _build_dataset_models(seed: int, locale: str = DEFAULT_LOCALE) -> dict[str, 
     )
     return {
         "seed": seed,
-        "case_id": case_id,
         "variant_id": variant_id,
         "cdr": cdr,
         "extraction": extraction,

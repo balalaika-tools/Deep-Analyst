@@ -42,9 +42,8 @@ class EntityDraft(BaseModel):
     to the record that mentions it so that names alone never merge two people.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    case_id: str
     entity_type: EntityType
     label: str
     normalized_key: str | None = None
@@ -82,16 +81,15 @@ class EntityDraft(BaseModel):
 
 
 class EndpointRef(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     entity_id: str
     entity_type: EntityType
 
 
 class RelationshipDraft(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    case_id: str
     subject: EndpointRef
     predicate: Predicate
     object: EndpointRef
@@ -115,7 +113,6 @@ class RelationshipDraft(BaseModel):
     def relationship_id(self) -> str:
         key = "|".join(
             (
-                self.case_id,
                 self.subject.entity_id,
                 self.predicate.value,
                 self.object.entity_id,

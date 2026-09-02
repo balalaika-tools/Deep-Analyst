@@ -5,11 +5,17 @@ from typing import Any
 
 from dataset.core import state
 from dataset.core.constants import ACCOUNT_COLUMNS, TRANSACTION_COLUMNS
-from dataset.core.util import _cdr_lexemes, _json_bytes, _ordered_row_hash, _record_hash, _sha256
+from dataset.core.util import (
+    _cdr_lexemes,
+    _global_record_id,
+    _json_bytes,
+    _ordered_row_hash,
+    _record_hash,
+    _sha256,
+)
 
 
 def build_source_ref_catalog(
-    case_id: str,
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
     emails: list[dict[str, Any]],
@@ -28,12 +34,13 @@ def build_source_ref_catalog(
         default_locator: str,
         logical_record: dict[str, Any],
     ) -> None:
+        record_key = _global_record_id(source, record_id)
         catalog[record_id] = {
-            "case_id": case_id,
+            "record_id": record_key,
             "source": source,
             "source_version": state.SOURCE_VERSIONS[source],
             "source_record_id": record_id,
-            "record_version_id": f"{case_id}:{source}:{record_id}:v1",
+            "record_version_id": f"{record_key}:{content_hash}",
             "raw_content_hash": content_hash,
             "raw_path": raw_path,
             "source_reliability": reliability,
@@ -124,7 +131,7 @@ def _source_refs(
     for record_id in record_ids:
         source = catalog[record_id]
         payload = {
-            "case_id": source["case_id"],
+            "record_id": source["record_id"],
             "source_system": source["source"],
             "source_version_id": source["source_version"],
             "source_record_id": source["source_record_id"],

@@ -18,7 +18,6 @@ def validate_emails(emails: list[dict[str, Any]]) -> None:
             "Date",
             "Subject",
             "Content-Type",
-            "X-Case-ID",
             "X-Source-Record-ID",
             "X-Source-Version",
         }

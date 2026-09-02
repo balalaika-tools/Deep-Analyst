@@ -41,9 +41,7 @@ def _header(message: Message, name: str) -> str:
     return str(value)
 
 
-def _record(
-    case_id: str, path: Path, relative_path: str
-) -> tuple[SourceRecord, CommunicationProjection]:
+def _record(path: Path, relative_path: str) -> tuple[SourceRecord, CommunicationProjection]:
     # compat32 keeps header values verbatim; the original Date lexeme is evidence.
     message = BytesParser(policy=policy.compat32).parsebytes(path.read_bytes())
     from_name, from_addr = parseaddr(_header(message, "From"))
@@ -68,7 +66,6 @@ def _record(
         "normalized": {"from": sender, "to": recipient, "event_time_utc": event_time.isoformat()},
     }
     record = SourceRecord(
-        case_id=case_id,
         source_system=SOURCE_SYSTEM,
         source_record_id=_header(message, "X-Source-Record-ID"),
         record_type="email",
@@ -81,7 +78,6 @@ def _record(
     )
     projection = CommunicationProjection(
         record_id=record.record_id,
-        case_id=case_id,
         channel="email",
         direction="sent",
         from_endpoint=sender,
@@ -94,11 +90,10 @@ def _record(
     return record, projection
 
 
-def load_emails(edition_dir: Path, case_id: str) -> SourceBatch:
+def load_emails(edition_dir: Path) -> SourceBatch:
     directory = edition_dir / RELATIVE_DIR
     rows = [
-        _record(case_id, path, f"{RELATIVE_DIR}/{path.name}")
-        for path in sorted(directory.glob("*.eml"))
+        _record(path, f"{RELATIVE_DIR}/{path.name}") for path in sorted(directory.glob("*.eml"))
     ]
     return SourceBatch(
         source_system=SOURCE_SYSTEM,

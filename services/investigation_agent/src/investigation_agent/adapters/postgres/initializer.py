@@ -10,7 +10,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection, sql
 from psycopg.rows import dict_row
 
-INITIALIZER_SCHEMA_VERSION = "agent-runtime@1"
+INITIALIZER_SCHEMA_VERSION = "agent-runtime@2"
 READER_ROLE = "agent_reader"
 WRITER_ROLE = "agent_writer"
 
@@ -31,7 +31,6 @@ REQUIRED_EVIDENCE_COLUMNS: dict[str, frozenset[str]] = {
     "records": frozenset(
         {
             "record_id",
-            "case_id",
             "source_system",
             "source_record_id",
             "record_type",
@@ -46,7 +45,6 @@ REQUIRED_EVIDENCE_COLUMNS: dict[str, frozenset[str]] = {
         {
             "chunk_id",
             "record_id",
-            "case_id",
             "char_start",
             "char_end",
             "text",
@@ -55,11 +53,10 @@ REQUIRED_EVIDENCE_COLUMNS: dict[str, frozenset[str]] = {
             "embedding",
         }
     ),
-    "entities": frozenset({"entity_id", "case_id", "entity_type", "label", "source_refs"}),
+    "entities": frozenset({"entity_id", "entity_type", "label", "source_refs"}),
     "relationships": frozenset(
         {
             "relationship_id",
-            "case_id",
             "subject_entity_id",
             "predicate",
             "object_entity_id",
@@ -71,7 +68,6 @@ REQUIRED_EVIDENCE_COLUMNS: dict[str, frozenset[str]] = {
     "transactions": frozenset(
         {
             "record_id",
-            "case_id",
             "txn_id",
             "booking_ts_utc",
             "value_date",
@@ -89,7 +85,6 @@ REQUIRED_EVIDENCE_COLUMNS: dict[str, frozenset[str]] = {
     "accounts": frozenset(
         {
             "record_id",
-            "case_id",
             "account_id",
             "iban",
             "holder_name",
@@ -101,7 +96,6 @@ REQUIRED_EVIDENCE_COLUMNS: dict[str, frozenset[str]] = {
     "communications": frozenset(
         {
             "record_id",
-            "case_id",
             "channel",
             "direction",
             "from_endpoint",
@@ -120,7 +114,6 @@ VIEW_DEFINITIONS: dict[str, str] = {
         WITH (security_barrier = true, security_invoker = true) AS
         SELECT
             r.record_id,
-            t.case_id,
             r.source_system,
             r.source_record_id,
             r.source_path,
@@ -143,15 +136,13 @@ VIEW_DEFINITIONS: dict[str, str] = {
             t.remittance_info
         FROM public.transactions AS t
         JOIN public.records AS r
-          ON r.record_id = t.record_id AND r.case_id = t.case_id
-        WHERE t.case_id = current_setting('app.case_id', true)
+          ON r.record_id = t.record_id
     """,
     "accounts_v1": """
         CREATE OR REPLACE VIEW agent_read.accounts_v1
         WITH (security_barrier = true, security_invoker = true) AS
         SELECT
             r.record_id,
-            a.case_id,
             r.source_system,
             r.source_record_id,
             r.source_path,
@@ -168,15 +159,13 @@ VIEW_DEFINITIONS: dict[str, str] = {
             a.opened_date
         FROM public.accounts AS a
         JOIN public.records AS r
-          ON r.record_id = a.record_id AND r.case_id = a.case_id
-        WHERE a.case_id = current_setting('app.case_id', true)
+          ON r.record_id = a.record_id
     """,
     "communications_v1": """
         CREATE OR REPLACE VIEW agent_read.communications_v1
         WITH (security_barrier = true, security_invoker = true) AS
         SELECT
             r.record_id,
-            c.case_id,
             r.source_system,
             r.source_record_id,
             r.source_path,
@@ -195,8 +184,7 @@ VIEW_DEFINITIONS: dict[str, str] = {
             c.device_id
         FROM public.communications AS c
         JOIN public.records AS r
-          ON r.record_id = c.record_id AND r.case_id = c.case_id
-        WHERE c.case_id = current_setting('app.case_id', true)
+          ON r.record_id = c.record_id
     """,
 }
 
@@ -230,6 +218,12 @@ async def initialize_database(
         await _verify_evidence_schema(connection)
         recorded = await _recorded_version(connection)
         if recorded == expected_version:
+            async with connection.transaction():
+                await _synchronize_login_roles(
+                    connection,
+                    reader_password=reader_password,
+                    writer_password=writer_password,
+                )
             return InitializationResult(version=expected_version, changed=False)
         if recorded is not None:
             raise IncompatibleInitializerVersion(
@@ -283,7 +277,7 @@ async def _verify_evidence_schema(connection: AsyncConnection[dict[str, Any]]) -
                 )
             )
             if missing:
-                raise EvidenceSchemaMissing("required evidence objects are unavailable")
+                raise EvidenceSchemaMissing(_missing_objects_message(missing))
             await cursor.execute(
                 "SELECT extname FROM pg_extension WHERE extname = ANY(%s::text[])",
                 (["pg_search", "vector"],),
@@ -304,7 +298,11 @@ async def _verify_evidence_schema(connection: AsyncConnection[dict[str, Any]]) -
         if not required.issubset(actual_columns.get(table, set())):
             missing.append(f"public.{table}:columns")
     if missing:
-        raise EvidenceSchemaMissing("required evidence objects are unavailable")
+        raise EvidenceSchemaMissing(_missing_objects_message(missing))
+
+
+def _missing_objects_message(missing: list[str]) -> str:
+    return f"required evidence objects are unavailable: {', '.join(missing)}"
 
 
 async def _recorded_version(connection: AsyncConnection[dict[str, Any]]) -> str | None:
@@ -330,6 +328,22 @@ async def _create_roles_and_schemas(
     reader_password: str,
     writer_password: str,
 ) -> None:
+    await _synchronize_login_roles(
+        connection,
+        reader_password=reader_password,
+        writer_password=writer_password,
+    )
+    async with connection.cursor() as cursor:
+        await cursor.execute("CREATE SCHEMA IF NOT EXISTS agent_read")
+        await cursor.execute("CREATE SCHEMA IF NOT EXISTS agent_runtime")
+
+
+async def _synchronize_login_roles(
+    connection: AsyncConnection[dict[str, Any]],
+    *,
+    reader_password: str,
+    writer_password: str,
+) -> None:
     async with connection.cursor() as cursor:
         await cursor.execute(
             "SELECT rolname FROM pg_roles WHERE rolname = ANY(%s::text[])",
@@ -347,8 +361,6 @@ async def _create_roles_and_schemas(
                     "NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD {password}"
                 ).format(role=sql.Identifier(role), password=sql.Literal(password))
             )
-        await cursor.execute("CREATE SCHEMA IF NOT EXISTS agent_read")
-        await cursor.execute("CREATE SCHEMA IF NOT EXISTS agent_runtime")
 
 
 async def _create_views_and_version_table(connection: AsyncConnection[dict[str, Any]]) -> None:

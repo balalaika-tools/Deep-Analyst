@@ -34,7 +34,7 @@ There is exactly **one main agent**, **two sub-agents**, and **one deterministic
 | Tool | Graph RAG Tool (`find_connections`) | Deterministic, bounded graph traversal. No model call, no repair loop — just code with hard limits. |
 
 Only the main agent is checkpointed and only it sees the running conversation. The two sub-agents
-are stateless: each invocation gets a brand-new nested agent loop with no memory of the case, no
+are stateless: each invocation gets a brand-new nested agent loop with no memory of the corpus, no
 memory of prior turns, and no ability to see or write the main transcript. That containment is
 deliberate — a bad SQL statement or an unproductive search query gets corrected *inside its own
 small loop*, using only the tight feedback that loop needs (a rejected plan, a retrieval miss), and
@@ -43,9 +43,8 @@ the analyst) sees. `find_connections` doesn't even need that: graph traversal fr
 entity, within server-owned depth/path/node/edge limits, is exact and repeatable, so there is
 nothing for a model to get wrong.
 
-All three tools are read-only, and all three receive the case ID from trusted server-side context
-— never from anything the model writes. A tool cannot be asked, by the model or by evidence text,
-to look at a different case.
+All three tools are read-only and query the complete configured evidence store. Neither model text
+nor conversation state can introduce a hidden evidence partition.
 
 ## How a turn actually flows
 
@@ -71,70 +70,69 @@ A retrieval miss, an empty query result, or an exhausted tool budget is reported
 retrieved" — the agent is explicitly instructed to never restate that as "the event did not
 happen."
 
-## How it remembers a conversation
+## Memory that survives long investigations — and scale
 
-> **The idea:** memory is one small, wholly-replaceable summary plus a bounded, cited evidence
-> index — never a growing transcript of raw tool output. A naive chat agent just keeps resending
-> every past message; this one deliberately doesn't.
+Most chat agents “remember” by replaying an ever-growing transcript. That works in a demo, then
+gets slower, more expensive, and less reliable as an investigation grows. This agent does something more
+deliberate: after a verified turn, it converts the useful state of the investigation into a compact,
+validated PostgreSQL checkpoint.
 
-```mermaid
-flowchart LR
-    subgraph turn["Turn N"]
-        direction TB
-        S["Starts with only:<br/>Control + Projection + Evidence cards<br/><i>never raw message history</i>"] --> W["Tools run"]
-        W --> Ans["Answer verified &amp; committed"]
-        Ans --> Close["Turn close:<br/>recompute the projection"]
-    end
-    EI[("Evidence index<br/>bounded · cumulative · cited by ID")]
-    W -->|new cards| EI
-    EI -.cited by reference.-> S
-    Close -->|"replaces — never appends"| P(["New working<br/>projection"])
-    P -.starting point for.-> next["Turn N+1"]
+Instead of carrying the full conversation history into Turn N+1, the service carries a **custom
+agent state**: immutable control, a bounded evidence index, and one replaceable working projection.
+The next turn receives what matters, what remains open, and which evidence supports it — even after
+a process restart or when another API replica handles the request.
 
-    classDef store fill:#ECFDF5,stroke:#059669,color:#064E3B,stroke-width:1.5px;
-    class EI,P store;
-```
+[![Carry custom agent state forward, not the full conversation](diagrams/agent-memory/agent-memory.visual-check.1440x900.light.png)](diagrams/agent-memory/agent-memory.html)
 
-Three things travel across turns:
+### Three parts, each with one job
 
-| Section | Holds | Behavior |
+| Memory section | What survives | Why it matters |
 |---|---|---|
-| **Control** | Case ID, policy version | Fixed for the thread |
-| **Evidence index** | One card per piece of evidence any tool ever returned — ID, kind, source, `confirmed`/`proposed` status | Grows by upsert; cited by ID, never re-sent in full |
-| **Working projection** | Goal, dialogue summary, resolved referents, focused evidence, qualified hypotheses, open questions | *Replaced whole* at every turn close |
+| **Control** | Policy version and state-schema version | A thread cannot silently change system policy. |
+| **Evidence index** | Bounded, deduplicated evidence cards with stable IDs, source references, and `confirmed` / `proposed` status | Citations remain traceable across turns without replaying raw tool output. |
+| **Working projection** | The current goal, resolved references, focused evidence, qualified hypotheses, open questions, and next steps | The conversation stays coherent without carrying the whole conversation. The projection is replaced, not appended. |
 
-The projection is model-written, but it can't lie by construction: it may only cite evidence IDs
-already in the index, a finding built on `proposed` evidence must say so, and it can never turn "no
-support retrieved" into "this didn't happen." A replacement that breaks a rule gets one repair
-attempt, then is discarded in favor of the previous projection, marked stale.
-
-### What a turn actually sees
-
-Illustrative content from the running scenario, not a literal log:
+Before every model call, trusted code rebuilds the prompt from:
 
 ```text
-Control: {"case_id": "case_trg_001", "policy_version": "trg-policy-v1.0.0"}
-
-Working projection:
-{
-  "user_goal": "Assess whether Mavridis is linked to the EUR 9,800 transfer on 5 March.",
-  "focus_evidence_ids": ["docs:R-01", "bank:t_88"],
-  "hypotheses": [{"statement": "The phone may belong to Mavridis (proposed).",
-                   "evidence_ids": ["docs:R-01"], "qualification": "proposed"}],
-  "open_questions": ["Does INV-2231 also appear in a document, not just the transaction?"]
-}
-
-Evidence index (cite these IDs):
-- docs:R-01 [chunk, proposed, via search_evidence] <untrusted-evidence>"...uses telephone +30 697 123 4567..."</untrusted-evidence>
-- bank:t_88 [row, confirmed, via query_records] <untrusted-evidence>amount_minor=980000 currency=EUR remittance_info=INV-2231</untrusted-evidence>
+immutable control + latest working projection + bounded evidence cards + current turn
 ```
 
-No raw SQL, no full retrieval payloads, no message-by-message history from earlier turns — just
-this compact bundle, plus the current turn's own tool calls, trimmed to a token budget if the turn
-runs long.
+The model never receives the product transcript, prior nested-agent conversations, generated SQL,
+or full retrieval payloads. The product transcript remains available through the history API, but
+it does not become model memory; the other private artifacts are not product history.
+
+### Why this stays trustworthy
+
+- **Memory cannot manufacture evidence.** Every evidence reference in the projection must already
+  exist in the index, and `proposed` evidence cannot be promoted by the summary.
+- **Compaction fails safely.** An invalid projection gets one repair attempt. If that also fails,
+  the last valid projection is kept and marked stale instead of storing a plausible-looking summary.
+- **Missing evidence stays missing evidence.** “No support retrieved” is never compacted into “the
+  event did not happen.”
+- **The answer and its memory advance together.** Synchronous checkpointing makes the committed,
+  grounded answer the durable boundary before the next turn begins.
+
+### Why this survives scale
+
+- **No sticky memory:** continuity lives in PostgreSQL, not in a Python process. A restarted service
+  or another replica can reconstruct the thread from its checkpoint.
+- **Bounded work per turn:** the projection has explicit field limits; the evidence index is bounded
+  and evicts the oldest unreferenced cards while recording incomplete coverage; the model receives
+  bounded card displays and a trimmed current-turn context.
+- **Safe retries:** a completed `request_id` is replayed without repeating agent or database work;
+  an interrupted request resumes from its last synchronous checkpoint without appending the user
+  message again.
+- **Concurrency by thread:** different investigations are independent and can run concurrently;
+  only turns within the same thread must be serialized.
+
+> **Production boundary:** the current prototype serializes a thread with an in-process lock. The
+> durable memory model already supports restarts and replica handoff, but active-active replicas
+> need a distributed/advisory lock or equivalent routing rule to prevent two simultaneous turns on
+> the same thread. This is coordination around the memory — not a redesign of it.
 
 For the exhaustive, machine-facing state and API contracts, see the
-[`add-investigation-agent-service`](../openspec/changes/add-investigation-agent-service/) change
+[`add-investigation-agent-service`](../openspec/changes/archive/2026-09-03-add-investigation-agent-service/) change
 and [docs/DESIGN.md, §10](../docs/DESIGN.md).
 
 Next → [AI-Assisted Development](ai-assisted-development.md)

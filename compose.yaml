@@ -253,7 +253,9 @@ services:
           "local/$${EVIDENCE_S3_BUCKET}/datasets/$${DATASET_EDITION}/raw/"
         mc mirror --overwrite /seed/manifest/ \
           "local/$${EVIDENCE_S3_BUCKET}/datasets/$${DATASET_EDITION}/"
-        mc mirror --overwrite --remove --exclude '.gitkeep' /seed/indexes/ \
+        # Ingestion owns indexes/<edition>/receipt.json. Do not use --remove here:
+        # a seed refresh must never erase the completion signal and force paid LLM work.
+        mc mirror --overwrite --exclude '.gitkeep' /seed/indexes/ \
           "local/$${EVIDENCE_S3_BUCKET}/indexes/$${DATASET_EDITION}/"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
@@ -385,7 +387,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://lgtm:4318}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://lgtm:4328/v1/traces}
       LOG_EXPORT: ${LOG_EXPORT:-otlp}
-      CAPTURE_AI_CONTENT: ${CAPTURE_AI_CONTENT:-false}
+      CAPTURE_AI_CONTENT: ${CAPTURE_AI_CONTENT:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "127.0.0.1:${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}:${INVESTIGATION_AGENT_PORT:?Set INVESTIGATION_AGENT_PORT in .env}"

@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": "2026-03-05T14:30:00Z",
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -12,11 +11,11 @@
     },
     "original_time_value": "2026-03-05T14:30:00Z",
     "parser_version": "bank-parser@1",
-    "raw_content_hash": "f419e21548b2f8537c98d77f3c411006efd95eb65c4524d5e083a340d080683f",
+    "raw_content_hash": "8a1e935433f015ad7845bcd164df7383f4d9570a4c1dea91d67df5e93b534fca",
     "raw_object_uri": "raw/bank.sql",
-    "record_id": "case_trg_001:bank:t_88",
+    "record_id": "bank:t_88",
     "record_type": "TRANSACTION",
-    "record_version_id": "case_trg_001:bank:t_88:v1",
+    "record_version_id": "bank:t_88:8a1e935433f015ad7845bcd164df7383f4d9570a4c1dea91d67df5e93b534fca",
     "source_record_id": "t_88",
     "source_system": "bank",
     "source_version_id": "bank@1-el"
@@ -24,7 +23,6 @@
   "raw": {
     "amount_text": "9800.00",
     "booking_ts_utc": "2026-03-05T14:30:00Z",
-    "case_id": "case_trg_001",
     "creditor_bic": "TRGSGR2A",
     "creditor_iban": "GR3601100010000000000054401",
     "creditor_name": "Meridian Consulting Ltd",

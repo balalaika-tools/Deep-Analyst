@@ -6,7 +6,7 @@ from dataset.core import state
 from dataset.core.state import _tr
 
 
-def build_transactions(case_id: str, accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_transactions(accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_id = {row["account_id"]: row for row in accounts}
 
     def transaction(
@@ -20,7 +20,6 @@ def build_transactions(case_id: str, accounts: list[dict[str, Any]]) -> list[dic
         debtor = by_id[debtor_id]
         creditor = by_id[creditor_id]
         return {
-            "case_id": case_id,
             "txn_id": txn_id,
             "booking_ts_utc": booking_ts_utc,
             "value_date": booking_ts_utc[:10],

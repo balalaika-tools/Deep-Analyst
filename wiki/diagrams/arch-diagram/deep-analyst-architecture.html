@@ -5034,7 +5034,7 @@
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" data-composition-frame-label="Ingestion pipeline" x="254" y="494" width="410" height="110" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="2" data-composition-frame-label="Case-scoped read boundary" x="484" y="214" width="640" height="390" rx="8" class="c-security-group" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="2" data-composition-frame-label="Global read-only boundary" x="484" y="214" width="640" height="390" rx="8" class="c-security-group" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
         <path data-edge-from="frontend" data-edge-to="orchestrator" data-edge-label="POST /v1/agent/invoke + SSE" data-edge-key="0" data-edge-id="frontend-orchestrator" data-composition-points="174,134;514,134" d="M 174 134 L 514 134" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
@@ -5079,8 +5079,8 @@
         <text data-detail="fine" x="574" y="156" class="t-backend" font-size="7" text-anchor="middle">3 tools</text>
         </g>
 
-        <g id="node-rag-agent" data-node-id="rag-agent" data-node-label="Hybrid RAG Subagent" tabindex="0" role="button" aria-label="Focus Hybrid RAG Subagent, BM25 + vector fusion, Investigation runtime › Case-scoped read boundary" aria-pressed="false" data-node-kind="backend" data-node-sublabel="BM25 + vector fusion" data-node-tag="search_evidence" data-node-context="Investigation runtime › Case-scoped read boundary">
-          <title>Hybrid RAG Subagent · BM25 + vector fusion · Investigation runtime › Case-scoped read boundary · search_evidence</title>
+        <g id="node-rag-agent" data-node-id="rag-agent" data-node-label="Hybrid RAG Subagent" tabindex="0" role="button" aria-label="Focus Hybrid RAG Subagent, BM25 + vector fusion, Investigation runtime › Global read-only boundary" aria-pressed="false" data-node-kind="backend" data-node-sublabel="BM25 + vector fusion" data-node-tag="search_evidence" data-node-context="Investigation runtime › Global read-only boundary">
+          <title>Hybrid RAG Subagent · BM25 + vector fusion · Investigation runtime › Global read-only boundary · search_evidence</title>
           <rect x="514" y="244" width="120" height="60" rx="6" class="c-mask"/>
           <rect x="514" y="244" width="120" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(520 250) scale(0.6875)">
@@ -5091,8 +5091,8 @@
         <text data-detail="fine" x="574" y="296" class="t-backend" font-size="7" text-anchor="middle">search_evidence</text>
         </g>
 
-        <g id="node-sql-agent" data-node-id="sql-agent" data-node-label="SQL Subagent" tabindex="0" role="button" aria-label="Focus SQL Subagent, Policy-gated SELECT, Investigation runtime › Case-scoped read boundary" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Policy-gated SELECT" data-node-tag="query_records" data-node-context="Investigation runtime › Case-scoped read boundary">
-          <title>SQL Subagent · Policy-gated SELECT · Investigation runtime › Case-scoped read boundary · query_records</title>
+        <g id="node-sql-agent" data-node-id="sql-agent" data-node-label="SQL Subagent" tabindex="0" role="button" aria-label="Focus SQL Subagent, Policy-gated SELECT, Investigation runtime › Global read-only boundary" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Policy-gated SELECT" data-node-tag="query_records" data-node-context="Investigation runtime › Global read-only boundary">
+          <title>SQL Subagent · Policy-gated SELECT · Investigation runtime › Global read-only boundary · query_records</title>
           <rect x="744" y="244" width="120" height="60" rx="6" class="c-mask"/>
           <rect x="744" y="244" width="120" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(750 250) scale(0.6875)">
@@ -5103,8 +5103,8 @@
         <text data-detail="fine" x="804" y="296" class="t-backend" font-size="7" text-anchor="middle">query_records</text>
         </g>
 
-        <g id="node-graph-tool" data-node-id="graph-tool" data-node-label="Graph RAG Tool" tabindex="0" role="button" aria-label="Focus Graph RAG Tool, Deterministic traversal, Investigation runtime › Case-scoped read boundary" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Deterministic traversal" data-node-tag="find_connections" data-node-context="Investigation runtime › Case-scoped read boundary">
-          <title>Graph RAG Tool · Deterministic traversal · Investigation runtime › Case-scoped read boundary · find_connections</title>
+        <g id="node-graph-tool" data-node-id="graph-tool" data-node-label="Graph RAG Tool" tabindex="0" role="button" aria-label="Focus Graph RAG Tool, Deterministic traversal, Investigation runtime › Global read-only boundary" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Deterministic traversal" data-node-tag="find_connections" data-node-context="Investigation runtime › Global read-only boundary">
+          <title>Graph RAG Tool · Deterministic traversal · Investigation runtime › Global read-only boundary · find_connections</title>
           <rect x="974" y="244" width="120" height="60" rx="6" class="c-mask"/>
           <rect x="974" y="244" width="120" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(980 250) scale(0.6875)">
@@ -5175,15 +5175,15 @@
         <text data-detail="fine" x="574" y="576" class="t-backend" font-size="7" text-anchor="middle">constrained LLM</text>
         </g>
 
-        <g id="node-evidence-db" data-node-id="evidence-db" data-node-label="Evidence Graph DB" tabindex="0" role="button" aria-label="Focus Evidence Graph DB, records + graph, Case-scoped read boundary" aria-pressed="false" data-node-kind="database" data-node-sublabel="records + graph" data-node-tag="BM25 + pgvector" data-node-context="Case-scoped read boundary">
-          <title>Evidence Graph DB · records + graph · Case-scoped read boundary · BM25 + pgvector</title>
+        <g id="node-evidence-db" data-node-id="evidence-db" data-node-label="Global Store" tabindex="0" role="button" aria-label="Focus Global Store, records + graph, Global read-only boundary" aria-pressed="false" data-node-kind="database" data-node-sublabel="records + graph" data-node-tag="BM25 + pgvector" data-node-context="Global read-only boundary">
+          <title>Global Store · records + graph · Global read-only boundary · BM25 + pgvector</title>
           <rect x="744" y="524" width="120" height="60" rx="6" class="c-mask"/>
           <rect x="744" y="524" width="120" height="60" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(750 530) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="804" y="552" class="t-primary" font-size="10.9" font-weight="600" text-anchor="middle">Evidence Graph DB</text>
+          <text data-node-label="" data-detail-anchor="" x="804" y="552" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Global Store</text>
         <text data-detail="context" x="804" y="568" class="t-muted" font-size="9" text-anchor="middle">records + graph</text>
         <text data-detail="fine" x="804" y="576" class="t-database" font-size="7" text-anchor="middle">BM25 + pgvector</text>
         </g>
@@ -5260,9 +5260,9 @@
           <text data-boundary-label="" x="262" y="517" class="t-cloud" font-size="9" font-weight="600">Ingestion pipeline</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="security-group" data-composition-frame-label="Case-scoped read boundary">
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="security-group" data-composition-frame-label="Global read-only boundary">
           <rect data-graph-role="structural-frame-label-mask" x="488" y="224" width="145" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="492" y="237" class="t-security" font-size="9" font-weight="600">Case-scoped read boundary</text>
+          <text data-boundary-label="" x="492" y="237" class="t-security" font-size="9" font-weight="600">Global read-only boundary</text>
         </g>
 
         <!-- Legend -->
@@ -5502,7 +5502,7 @@
         </div>
         <ul>
           <li>&bull; The graph is relational: entities and relationships are stored in PostgreSQL</li>
-          <li>&bull; BM25 and vector indexes are rebuildable projections of the same evidence store</li>
+          <li>&bull; BM25 and vector indexes are rebuildable projections of the global evidence store</li>
         </ul>
       </div>
     </div>

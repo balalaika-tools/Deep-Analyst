@@ -1,4 +1,4 @@
-"""Case-bound trusted reads over canonical evidence tables and search indexes."""
+"""Trusted reads over canonical global evidence tables and search indexes."""
 
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ from investigation_agent.genai.investigation.connections import (
 @dataclass(frozen=True, slots=True)
 class _RecordEvidence:
     record_id: str
-    case_id: str
     content_hash: str
     text: str | None
     payload: Mapping[str, object]
@@ -63,7 +62,6 @@ class PostgresEvidenceReader:
     async def search_lexical(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         excluded_chunk_ids: frozenset[str],
         deadline: float,
@@ -71,30 +69,28 @@ class PostgresEvidenceReader:
         clauses, filter_parameters, next_position = _chunk_filters(
             query=query,
             excluded_chunk_ids=excluded_chunk_ids,
-            first_position=3,
+            first_position=2,
         )
         limit_position = next_position
         statement = (
-            "SELECT c.chunk_id, c.record_id, c.case_id, c.char_start, c.char_end, "
+            "SELECT c.chunk_id, c.record_id, c.char_start, c.char_end, "
             "c.text, c.source_system, c.event_time_utc, r.content_hash, r.text AS record_text, "
             "paradedb.score(c.chunk_id) AS score "
             "FROM public.chunks AS c "
-            "JOIN public.records AS r ON r.record_id = c.record_id AND r.case_id = c.case_id "
-            "WHERE c.case_id = $1 AND r.case_id = $1 "
-            "AND c.text @@@ paradedb.match('text', $2, conjunction_mode => true) "
+            "JOIN public.records AS r ON r.record_id = c.record_id "
+            "WHERE c.text @@@ paradedb.match('text', $1, conjunction_mode => true) "
             f"{clauses} ORDER BY score DESC, c.chunk_id ASC LIMIT ${limit_position}"
         )
         rows = await self._fetch_rows(
             statement,
-            (case_id, query.query, *filter_parameters, query.top_k),
+            (query.query, *filter_parameters, query.top_k),
             deadline=deadline,
         )
-        return _retrieval_candidates(rows, case_id=case_id, modality=RetrievalModality.BM25)
+        return _retrieval_candidates(rows, modality=RetrievalModality.BM25)
 
     async def search_vector(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         embedding: Sequence[float],
         excluded_chunk_ids: frozenset[str],
@@ -104,30 +100,29 @@ class PostgresEvidenceReader:
         clauses, filter_parameters, next_position = _chunk_filters(
             query=query,
             excluded_chunk_ids=excluded_chunk_ids,
-            first_position=3,
+            first_position=2,
         )
         limit_position = next_position
         statement = (
-            "SELECT c.chunk_id, c.record_id, c.case_id, c.char_start, c.char_end, "
+            "SELECT c.chunk_id, c.record_id, c.char_start, c.char_end, "
             "c.text, c.source_system, c.event_time_utc, r.content_hash, r.text AS record_text, "
-            "1.0 - (c.embedding <=> $2::public.vector) AS score "
+            "1.0 - (c.embedding <=> $1::public.vector) AS score "
             "FROM public.chunks AS c "
-            "JOIN public.records AS r ON r.record_id = c.record_id AND r.case_id = c.case_id "
-            "WHERE c.case_id = $1 AND r.case_id = $1 AND c.embedding IS NOT NULL "
-            f"{clauses} ORDER BY c.embedding <=> $2::public.vector, c.chunk_id ASC "
+            "JOIN public.records AS r ON r.record_id = c.record_id "
+            "WHERE c.embedding IS NOT NULL "
+            f"{clauses} ORDER BY c.embedding <=> $1::public.vector, c.chunk_id ASC "
             f"LIMIT ${limit_position}"
         )
         rows = await self._fetch_rows(
             statement,
-            (case_id, vector, *filter_parameters, query.top_k),
+            (vector, *filter_parameters, query.top_k),
             deadline=deadline,
         )
-        return _retrieval_candidates(rows, case_id=case_id, modality=RetrievalModality.VECTOR)
+        return _retrieval_candidates(rows, modality=RetrievalModality.VECTOR)
 
     async def load_graph_entities(
         self,
         *,
-        case_id: str,
         entity_ids: frozenset[str],
         row_limit: int,
         deadline: float,
@@ -141,36 +136,32 @@ class PostgresEvidenceReader:
                 async with connection.cursor() as cursor:
                     await _set_read_controls(
                         cursor,
-                        case_id=case_id,
                         statement_timeout_ms=self._statement_timeout_ms,
                     )
                     await cursor.execute(
-                        "SELECT entity_id, case_id, entity_type, label, source_refs "
+                        "SELECT entity_id, entity_type, label, source_refs "
                         "FROM public.entities "
-                        "WHERE case_id = $1 AND entity_id = ANY($2::text[]) "
-                        "ORDER BY entity_id LIMIT $3",
-                        (case_id, sorted(entity_ids), row_limit),
+                        "WHERE entity_id = ANY($1::text[]) "
+                        "ORDER BY entity_id LIMIT $2",
+                        (sorted(entity_ids), row_limit),
                     )
                     rows = await cursor.fetchall()
                     references = _all_references(rows)
                     records = await _load_records(
                         cursor,
-                        case_id=case_id,
                         references=references,
                     )
         nodes: list[GraphNode] = []
         for row in rows:
             sources = _resolve_references(
                 _parse_references(row.get("source_refs")),
-                case_id=case_id,
                 records=records,
             )
-            if not sources or row.get("case_id") != case_id:
+            if not sources:
                 continue
             nodes.append(
                 GraphNode(
                     entity_id=str(row["entity_id"]),
-                    case_id=case_id,
                     entity_type=EntityType(str(row["entity_type"])),
                     label=str(row["label"]),
                     sources=sources,
@@ -181,7 +172,6 @@ class PostgresEvidenceReader:
     async def load_graph_edges(
         self,
         *,
-        case_id: str,
         frontier_entity_ids: frozenset[str],
         filters: ConnectionFilters,
         row_limit: int,
@@ -189,12 +179,11 @@ class PostgresEvidenceReader:
     ) -> tuple[GraphEdge, ...]:
         if not frontier_entity_ids or row_limit < 1:
             return ()
-        clauses, parameters, next_position = _graph_filters(filters, first_position=4)
+        clauses, parameters, next_position = _graph_filters(filters, first_position=3)
         statement = (
-            "SELECT relationship_id, case_id, subject_entity_id, predicate, object_entity_id, "
+            "SELECT relationship_id, subject_entity_id, predicate, object_entity_id, "
             "status, occurred_at, source_refs FROM public.relationships "
-            "WHERE case_id = $1 "
-            "AND (subject_entity_id = ANY($2::text[]) OR object_entity_id = ANY($2::text[])) "
+            "WHERE (subject_entity_id = ANY($1::text[]) OR object_entity_id = ANY($1::text[])) "
             f"{clauses} ORDER BY relationship_id LIMIT ${next_position}"
         )
         async with self._pool.connection(
@@ -204,13 +193,11 @@ class PostgresEvidenceReader:
                 async with connection.cursor() as cursor:
                     await _set_read_controls(
                         cursor,
-                        case_id=case_id,
                         statement_timeout_ms=self._statement_timeout_ms,
                     )
                     await cursor.execute(
                         statement,
                         (
-                            case_id,
                             sorted(frontier_entity_ids),
                             [status.value for status in filters.statuses],
                             *parameters,
@@ -221,22 +208,19 @@ class PostgresEvidenceReader:
                     references = _all_references(rows)
                     records = await _load_records(
                         cursor,
-                        case_id=case_id,
                         references=references,
                     )
         edges: list[GraphEdge] = []
         for row in rows:
             sources = _resolve_references(
                 _parse_references(row.get("source_refs")),
-                case_id=case_id,
                 records=records,
             )
-            if not sources or row.get("case_id") != case_id:
+            if not sources:
                 continue
             edges.append(
                 GraphEdge(
                     relationship_id=str(row["relationship_id"]),
-                    case_id=case_id,
                     subject_entity_id=str(row["subject_entity_id"]),
                     predicate=Predicate(str(row["predicate"])),
                     object_entity_id=str(row["object_entity_id"]),
@@ -263,7 +247,6 @@ class PostgresEvidenceReader:
                 async with connection.cursor() as cursor:
                     await _set_read_controls(
                         cursor,
-                        case_id=str(parameters[0]),
                         statement_timeout_ms=self._statement_timeout_ms,
                     )
                     await cursor.execute(statement, parameters)
@@ -303,7 +286,7 @@ def _graph_filters(
     *,
     first_position: int,
 ) -> tuple[str, tuple[object, ...], int]:
-    clauses = ["AND status = ANY($3::text[]) "]
+    clauses = ["AND status = ANY($2::text[]) "]
     parameters: list[object] = []
     position = first_position
     if filters.predicates:
@@ -324,20 +307,18 @@ def _graph_filters(
 async def _set_read_controls(
     cursor: Any,
     *,
-    case_id: str,
     statement_timeout_ms: int,
 ) -> None:
     await cursor.execute("SET TRANSACTION READ ONLY")
     await cursor.execute(
-        "SELECT set_config('app.case_id', $1, true), set_config('statement_timeout', $2, true)",
-        (case_id, f"{statement_timeout_ms}ms"),
+        "SELECT set_config('statement_timeout', $1, true)",
+        (f"{statement_timeout_ms}ms",),
     )
 
 
 def _retrieval_candidates(
     rows: Sequence[Mapping[str, object]],
     *,
-    case_id: str,
     modality: RetrievalModality,
 ) -> tuple[RetrievalCandidate, ...]:
     candidates: list[RetrievalCandidate] = []
@@ -353,8 +334,8 @@ def _retrieval_candidates(
             raise EvidenceIntegrityError("retrieval score is not numeric")
         start = raw_start
         end = raw_end
-        if row.get("case_id") != case_id or not isinstance(record_text, str):
-            raise EvidenceIntegrityError("retrieval result escaped its trusted case")
+        if not isinstance(record_text, str):
+            raise EvidenceIntegrityError("retrieval result has no source record text")
         if record_text[start:end] != text:
             raise EvidenceIntegrityError("chunk offsets do not resolve against the source record")
         record_id = str(row["record_id"])
@@ -362,7 +343,6 @@ def _retrieval_candidates(
             RetrievalCandidate(
                 chunk_id=str(row["chunk_id"]),
                 record_id=record_id,
-                case_id=case_id,
                 text=text,
                 content_hash=str(row["content_hash"]),
                 source_ref=SourceRef(
@@ -395,16 +375,15 @@ def _all_references(rows: Sequence[Mapping[str, object]]) -> tuple[SourceRef, ..
 async def _load_records(
     cursor: Any,
     *,
-    case_id: str,
     references: tuple[SourceRef, ...],
 ) -> dict[str, _RecordEvidence]:
     ids = sorted({ref.record_id for ref in references})
     if not ids:
         return {}
     await cursor.execute(
-        "SELECT record_id, case_id, content_hash, text, payload FROM public.records "
-        "WHERE case_id = $1 AND record_id = ANY($2::text[]) ORDER BY record_id",
-        (case_id, ids),
+        "SELECT record_id, content_hash, text, payload FROM public.records "
+        "WHERE record_id = ANY($1::text[]) ORDER BY record_id",
+        (ids,),
     )
     records: dict[str, _RecordEvidence] = {}
     for row in await cursor.fetchall():
@@ -412,7 +391,6 @@ async def _load_records(
         payload = row.get("payload")
         records[record_id] = _RecordEvidence(
             record_id=record_id,
-            case_id=str(row["case_id"]),
             content_hash=str(row["content_hash"]),
             text=str(row["text"]) if row.get("text") is not None else None,
             payload=payload if isinstance(payload, Mapping) else {},
@@ -439,17 +417,15 @@ def _parse_references(value: object) -> tuple[SourceRef, ...]:
 def _resolve_references(
     references: tuple[SourceRef, ...],
     *,
-    case_id: str,
     records: Mapping[str, _RecordEvidence],
 ) -> tuple[ResolvedSourceRef, ...]:
     resolved: list[ResolvedSourceRef] = []
     for reference in references:
         record = records.get(reference.record_id)
-        if record is None or record.case_id != case_id or not _locator_matches(reference, record):
+        if record is None or not _locator_matches(reference, record):
             return ()
         resolved.append(
             ResolvedSourceRef(
-                case_id=case_id,
                 content_hash=record.content_hash,
                 source_ref=reference,
             )

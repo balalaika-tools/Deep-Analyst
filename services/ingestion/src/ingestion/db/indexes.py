@@ -36,7 +36,7 @@ async def ensure_indexes(conn: AsyncConnection, *, embedding_dimensions: int) ->
     await conn.execute(
         text(
             f"CREATE INDEX IF NOT EXISTS {BM25_INDEX} ON chunks "
-            "USING bm25 (chunk_id, text, case_id, source_system, record_id) "
+            "USING bm25 (chunk_id, text, source_system, record_id) "
             "WITH (key_field = 'chunk_id')"
         )
     )

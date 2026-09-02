@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": "2026-03-04T16:40:11Z",
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -12,11 +11,11 @@
     },
     "original_time_value": "Wed, 4 Mar 2026 18:40:11 +0200",
     "parser_version": "email-parser@1",
-    "raw_content_hash": "6bc46a148e82bd784f0cb716bb7efab781fcd2da4300bc1b21d045aaf148eec4",
+    "raw_content_hash": "367af081a2e720d84dcf511402b3ada19407143d95565d1b22d25d33a4c985c7",
     "raw_object_uri": "raw/emails/eM1.eml",
-    "record_id": "case_trg_001:email:eM1",
+    "record_id": "email:eM1",
     "record_type": "EMAIL",
-    "record_version_id": "case_trg_001:email:eM1:v1",
+    "record_version_id": "email:eM1:367af081a2e720d84dcf511402b3ada19407143d95565d1b22d25d33a4c985c7",
     "source_record_id": "eM1",
     "source_system": "email",
     "source_version_id": "email@1-el"
@@ -31,7 +30,6 @@
       "Message-ID": "<7f3a91@meridian-consulting.example>",
       "Subject": "Πέμπτη",
       "To": "k.rossi@aegeantrade.example",
-      "X-Case-ID": "case_trg_001",
       "X-Source-Record-ID": "eM1",
       "X-Source-Version": "email@1-el"
     }

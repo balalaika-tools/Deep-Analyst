@@ -10,14 +10,13 @@ from dataset.core.state import _tr
 from dataset.core.util import _digits, _json_bytes, _make_gr_iban
 
 
-def build_quarantine(case_id: str) -> tuple[dict[str, bytes], list[dict[str, str]]]:
+def build_quarantine() -> tuple[dict[str, bytes], list[dict[str, str]]]:
     cdr_stream = io.StringIO(newline="")
     writer = csv.DictWriter(cdr_stream, fieldnames=CDR_COLUMNS, lineterminator="\n")
     writer.writeheader()
     writer.writerow(
         {
             "record_id": "Q-CDR-01",
-            "case_id": case_id,
             "seq": 99901,
             "record_type": "MOC",
             "subscriber_msisdn": _digits(PHONES["n1"]),
@@ -33,7 +32,6 @@ def build_quarantine(case_id: str) -> tuple[dict[str, bytes], list[dict[str, str
     )
 
     invalid_iban = {
-        "case_id": case_id,
         "account_id": "Q-BANK-01",
         "iban": "GR0000000000000000000000000",
         "holder_name": "Invalid Fixture",
@@ -43,7 +41,6 @@ def build_quarantine(case_id: str) -> tuple[dict[str, bytes], list[dict[str, str
         "source_version": state.SOURCE_VERSIONS["bank"],
     }
     invalid_scale = {
-        "case_id": case_id,
         "txn_id": "Q-BANK-02",
         "booking_ts_utc": "2026-03-04T10:00:00Z",
         "value_date": "2026-03-04",
@@ -61,7 +58,6 @@ def build_quarantine(case_id: str) -> tuple[dict[str, bytes], list[dict[str, str
     }
     duplicate_a = {
         "msg_id": "Q-DUP-01",
-        "case_id": case_id,
         "imei": DEVICES["n1"],
         "subscriber_msisdn": PHONES["n1"],
         "direction": "out",
@@ -73,7 +69,6 @@ def build_quarantine(case_id: str) -> tuple[dict[str, bytes], list[dict[str, str
     }
     duplicate_b = {
         "msg_id": "Q-DUP-01",
-        "case_id": case_id,
         "imei": DEVICES["n1"],
         "subscriber_msisdn": PHONES["n1"],
         "direction": "out",

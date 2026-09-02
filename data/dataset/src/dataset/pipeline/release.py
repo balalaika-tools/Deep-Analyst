@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from dataset.core.constants import CASE_ID, DEFAULT_LOCALE
+from dataset.core.constants import DEFAULT_LOCALE
 from dataset.core.util import _require
 from dataset.pipeline.models import _build_dataset_models
 from dataset.pipeline.verify import verify_manifest
@@ -20,22 +20,20 @@ def _existing_output_is_generated(output: Path) -> bool:
         return False
     if not any(output.iterdir()):
         return True
+    manifest: dict[str, Any] = {}
     try:
         manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
         seed = manifest.get("rng_seed")
         if type(seed) is not int:
             return False
-        # One-time migration path for the original Greek-only canonical build.
-        if (
-            "language" not in manifest
-            and manifest.get("dataset_version") == "trg-synth-v1.0.0"
-            and manifest.get("case_id") == CASE_ID
-            and manifest.get("source_totals", {}).get("all_source_records") == 142
-        ):
-            return True
         verify_manifest(output, expected_seed=seed)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-        return False
+        return (
+            manifest.get("synthetic_data") is True
+            and str(manifest.get("dataset_version", "")).startswith("trg-synth-")
+            and manifest.get("source_totals", {}).get("all_source_records") == 142
+            and isinstance(manifest.get("raw_files"), list)
+        )
     return True
 
 

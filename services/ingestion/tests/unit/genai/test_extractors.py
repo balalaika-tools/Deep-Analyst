@@ -79,7 +79,7 @@ async def test_native_structured_output_uses_the_raw_schema_without_tool_choice(
 
 
 @pytest.mark.asyncio
-async def test_native_schema_validation_failure_is_permanent(
+async def test_native_schema_validation_failure_is_retried_and_can_recover(
     telemetry: Telemetry,
     native_model_factory: Any,
     native_response_factory: Any,
@@ -88,7 +88,30 @@ async def test_native_schema_validation_failure_is_permanent(
     tracer_provider, _, _, _ = telemetry
     model = native_model_factory(
         profile={"structured_output": True},
-        script=[native_response_factory({"entities": [{"entity_type": "PERSON"}]})],
+        script=[
+            native_response_factory(
+                {
+                    "entities": [
+                        {
+                            "entity_type": "PERSON",
+                            "text": "Alex Mavridis",
+                            "aliases": [{"?": ""}],
+                        }
+                    ]
+                }
+            ),
+            native_response_factory(
+                {
+                    "entities": [
+                        {
+                            "entity_type": "PERSON",
+                            "text": "Alex Mavridis",
+                            "aliases": ["Alex"],
+                        }
+                    ]
+                }
+            ),
+        ],
     )
     extractor = AgentEntityExtractor(
         build_entity_agent(model, max_retries=2, initial_delay=0.0),
@@ -96,10 +119,32 @@ async def test_native_schema_validation_failure_is_permanent(
         tracer=tracer_provider.get_tracer("t"),
     )
 
-    with pytest.raises(PermanentExtractionError):
+    candidates = await extractor.extract_entities(CHUNK)
+
+    assert [candidate.aliases for candidate in candidates] == [("Alex",)]
+    assert model.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_native_schema_validation_failure_is_permanent_after_retry_budget(
+    telemetry: Telemetry,
+    native_model_factory: Any,
+    native_response_factory: Any,
+    throttle: ModelThrottle,
+) -> None:
+    tracer_provider, _, _, _ = telemetry
+    invalid = native_response_factory({"entities": [{"entity_type": "PERSON"}]})
+    model = native_model_factory(profile={"structured_output": True}, script=[invalid])
+    extractor = AgentEntityExtractor(
+        build_entity_agent(model, max_retries=1, initial_delay=0.0),
+        throttle=throttle,
+        tracer=tracer_provider.get_tracer("t"),
+    )
+
+    with pytest.raises(PermanentExtractionError, match="StructuredOutputValidationError"):
         await extractor.extract_entities(CHUNK)
 
-    assert model.calls == 1
+    assert model.calls == 2
 
 
 @pytest.mark.asyncio

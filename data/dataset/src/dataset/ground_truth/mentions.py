@@ -10,7 +10,6 @@ from dataset.provenance import _field_locator, _source_refs, _text_span_locator
 
 
 def build_mentions_and_resolutions(
-    case_id: str,
     ref_catalog: dict[str, dict[str, Any]],
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
@@ -68,7 +67,6 @@ def build_mentions_and_resolutions(
         mentions.append(
             {
                 "mention_id": mention_id,
-                "case_id": case_id,
                 "record_version_id": record_version_id,
                 "entity_type": entity_type,
                 "raw_value": raw_value,
@@ -521,7 +519,6 @@ def build_mentions_and_resolutions(
     candidates = [
         {
             "candidate_id": "actor-candidate:ent_person_mavridou_n8:ent_person_mavridis_a:actor-resolution-score@1",
-            "case_id": case_id,
             "left_entity_id": "ent_person_mavridou_n8",
             "right_entity_id": "ent_person_mavridis_a",
             "resolution_status": "proposed",

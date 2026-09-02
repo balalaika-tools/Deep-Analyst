@@ -7,7 +7,7 @@ from dataset.core.fixtures import DEVICES, PHONES
 from dataset.core.state import _tr
 
 
-def build_extraction(case_id: str) -> list[dict[str, Any]]:
+def build_extraction() -> list[dict[str, Any]]:
     def message(
         msg_id: str,
         device: str,
@@ -19,7 +19,6 @@ def build_extraction(case_id: str) -> list[dict[str, Any]]:
     ) -> dict[str, Any]:
         return {
             "msg_id": msg_id,
-            "case_id": case_id,
             "imei": DEVICES[device],
             "subscriber_msisdn": PHONES[device],
             "direction": direction,

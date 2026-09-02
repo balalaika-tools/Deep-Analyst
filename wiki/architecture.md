@@ -8,7 +8,9 @@ source file to a cited sentence in the analyst's answer. [Data Layer](data-layer
 
 ## The picture
 
-![Deep Analyst architecture: three source families flow through an ingestion pipeline into an evidence graph database, which the investigation runtime reads through three read-only tools to answer analyst questions in a Next.js chat UI, with Langfuse observing the agent and pipeline traces.](../misc/arch-diagram/deep-analyst-architecture.visual-check.2048x1320.light.png)
+[![Deep Analyst architecture: three source families flow through an ingestion pipeline into an evidence graph database, which the investigation runtime reads through three read-only tools to answer analyst questions in a Next.js chat UI, with Langfuse observing the agent and pipeline traces.](diagrams/arch-diagram/deep-analyst-architecture.visual-check.2048x1320.light.png)](diagrams/arch-diagram/deep-analyst-architecture.html)
+
+Click the diagram to open the interactive version (pan, zoom, light/dark) in the browser.
 
 Three source families — communications, financial data, and documents — go through an **ingestion
 pipeline** once, on startup. Ingestion writes everything to one **evidence graph database**
@@ -60,10 +62,11 @@ and role from the evidence itself. [Agent Layer](agent-layer.md) is the deep div
 
 ## The investigation UI
 
-`investigation-web` is a case-scoped Next.js chat application. It streams progress and the final
+`investigation-web` is a thread-oriented Next.js chat application. It streams progress and the final
 answer over Server-Sent Events, lists and reopens past conversations from the same checkpoints the
-agent writes, and has no authentication layer — this prototype assumes a single trusted analyst per
-deployment, not a multi-tenant product.
+agent writes, and lets every fresh conversation query the global evidence store. It has no
+authentication layer — this prototype assumes a single trusted analyst per deployment, not a
+multi-tenant product.
 
 ## Observability
 

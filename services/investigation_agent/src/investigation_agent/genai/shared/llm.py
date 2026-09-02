@@ -49,6 +49,16 @@ type ChatFactory = Callable[..., ChatModel]
 type EmbeddingFactory = Callable[..., EmbeddingModel]
 
 
+def _generation_options(settings: Settings) -> dict[str, Any]:
+    """Return only generation controls supported by the configured model."""
+    if "openai.gpt-5.6-terra" in settings.bedrock_chat_model_id:
+        return {}
+    return {
+        "temperature": settings.model_temperature,
+        "reasoning_effort": settings.model_reasoning_effort,
+    }
+
+
 def _default_chat_factory(model_id: str, **options: Any) -> ChatModel:
     from langchain.chat_models import init_chat_model
 
@@ -80,9 +90,8 @@ def build_model_clients(
     )
     shared: dict[str, Any] = {
         "region_name": settings.aws_region,
-        "temperature": settings.model_temperature,
-        "reasoning_effort": settings.model_reasoning_effort,
         "config": sdk_config,
+        **_generation_options(settings),
     }
     if callbacks:
         shared["callbacks"] = list(callbacks)

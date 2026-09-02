@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -82,13 +83,14 @@ class StreamingGraph:
         self.stream_calls += 1
         assert stream_mode == ["updates", "custom"] and durability == "sync" and version == "v2"
         assert input is not None
-        self.values = dict(input)
+        # Later turns receive turn-only input; merge it like a checkpointer would.
+        self.values = {**(self.values or {}), **dict(input)}
         for event in self.raw_events:
             yield event
         if self.error is not None:
             raise self.error
         if self.commit:
-            self.values = _committed(input, answer=self.answer)
+            self.values = _committed(self.values, answer=self.answer)
 
 
 def _service(graph: StreamingGraph, locks: ThreadLockRegistry) -> InvokeTurn:
@@ -105,13 +107,10 @@ def _service(graph: StreamingGraph, locks: ThreadLockRegistry) -> InvokeTurn:
     )
 
 
-def _request() -> InvokeRequest:
-    return InvokeRequest(
-        request_id="request-1",
-        thread_id="thread-1",
-        case_id="case-1",
-        message="Investigate this account",
-    )
+def _request(
+    *, request_id: str = "request-1", message: str = "Investigate this account"
+) -> InvokeRequest:
+    return InvokeRequest(request_id=request_id, thread_id="thread-1", message=message)
 
 
 def _committed(graph_input: Mapping[str, Any], *, answer: str) -> dict[str, Any]:
@@ -153,11 +152,23 @@ def _committed(graph_input: Mapping[str, Any], *, answer: str) -> dict[str, Any]
 
 async def _collect(graph: StreamingGraph) -> tuple[list[dict[str, object]], ThreadLockRegistry]:
     locks = ThreadLockRegistry()
-    prepared = await _service(graph, locks).prepare(_request())
+    return await _stream(_service(graph, locks), _request()), locks
+
+
+async def _stream(service: InvokeTurn, request: InvokeRequest) -> list[dict[str, object]]:
+    prepared = await service.prepare(request)
     encoded = [
         event async for event in stream_prepared_turn(prepared, chunk_chars=5, clock=lambda: NOW)
     ]
-    return [json.loads(event["data"]) for event in encoded], locks
+    return [json.loads(event["data"]) for event in encoded]
+
+
+def _answer_text(events: list[dict[str, object]]) -> str:
+    return "".join(
+        cast(str, cast(dict[str, object], event["data"])["text"])
+        for event in events
+        if event["event"] == "answer.delta"
+    )
 
 
 def test_update_allowlist_only_names_real_agent_nodes() -> None:
@@ -296,3 +307,175 @@ async def test_durably_failed_replay_is_terminal_and_not_retryable() -> None:
 
 def test_heartbeat_is_an_sse_comment_not_a_public_event() -> None:
     assert heartbeat().encode() == b": heartbeat\r\n\r\n"
+
+
+@pytest.mark.asyncio
+async def test_older_completed_request_replays_its_own_answer_without_a_new_run() -> None:
+    graph = StreamingGraph(answer="First answer")
+    service = _service(graph, ThreadLockRegistry())
+    first = await _stream(service, _request())
+    graph.answer = "Second answer"
+    second = await _stream(service, _request(request_id="request-2", message="Then who paid?"))
+    assert _answer_text(first) == "First answer" and _answer_text(second) == "Second answer"
+    assert graph.stream_calls == 2
+
+    replay = await _stream(service, _request())
+
+    assert graph.stream_calls == 2
+    assert [event["event"] for event in replay] == [
+        "run.started",
+        "answer.delta",
+        "answer.delta",
+        "answer.delta",
+        "run.completed",
+    ]
+    assert _answer_text(replay) == "First answer"
+    assert replay[0]["turn_id"] == first[0]["turn_id"]
+
+
+@dataclass
+class CancellingGraph(StreamingGraph):
+    """Simulates the shutdown drain cancelling the controller while the graph is running."""
+
+    cooperative: bool = True
+
+    async def astream(
+        self,
+        input: Mapping[str, Any] | None,
+        config: Mapping[str, object],
+        *,
+        context: RuntimeContext,
+        stream_mode: list[str],
+        durability: str,
+        version: str,
+    ) -> AsyncIterator[object]:
+        del input, config, stream_mode, durability, version
+        self.stream_calls += 1
+        yield self.raw_events[0]
+        if self.cooperative:
+            cast(Any, context.cancellation).cancel()
+        context.cancellation.check()
+        raise asyncio.CancelledError
+
+
+@pytest.mark.asyncio
+async def test_cooperative_cancellation_emits_a_cancelled_terminal_event_and_releases() -> None:
+    locks = ThreadLockRegistry()
+    prepared = await _service(CancellingGraph(), locks).prepare(_request())
+
+    events = [
+        json.loads(event["data"])
+        async for event in stream_prepared_turn(prepared, chunk_chars=5, clock=lambda: NOW)
+    ]
+
+    assert [event["event"] for event in events] == ["run.started", "progress", "run.failed"]
+    assert events[-1]["data"] == {
+        "code": "cancelled",
+        "message": "The investigation was cancelled.",
+        "retryable": True,
+    }
+    assert not await locks.is_locked("thread-1")
+
+
+@pytest.mark.asyncio
+async def test_transport_cancellation_still_propagates_and_releases_the_lock() -> None:
+    locks = ThreadLockRegistry()
+    prepared = await _service(CancellingGraph(cooperative=False), locks).prepare(_request())
+
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in stream_prepared_turn(prepared, chunk_chars=5, clock=lambda: NOW):
+            pass
+
+    assert prepared.cancellation.cancelled
+    assert not await locks.is_locked("thread-1")
+
+
+@dataclass
+class RecordingTelemetry:
+    closes: list[tuple[str, object]] = field(default_factory=list)
+
+    @property
+    def closed(self) -> bool:
+        return bool(self.closes)
+
+    def trace_carrier(self) -> dict[str, str]:
+        return {"traceparent": "00-1-1-01"}
+
+    def record_first_safe_progress(self) -> None:
+        return None
+
+    def record_answer_ready(self) -> None:
+        return None
+
+    def record_first_public_delta(self) -> None:
+        return None
+
+    def finish(self, *, outcome: str = "success") -> None:
+        self.closes.append(("finish", outcome))
+
+    def fail(self, exc: BaseException | None, *, failure_class: Any = "internal") -> None:
+        self.closes.append(("fail", failure_class))
+
+    def cancel(self) -> None:
+        self.closes.append(("cancel", None))
+
+    def trace_stream(self, source: Any) -> Any:
+        return source
+
+    def activate(self) -> Any:
+        import contextlib
+
+        return contextlib.nullcontext()
+
+
+class FailingCommitGraph(StreamingGraph):
+    async def astream(self, input: Any, config: Any, **kwargs: Any) -> AsyncIterator[object]:
+        del config, kwargs
+        self.stream_calls += 1
+        state = parse_state(input)
+        assert state is not None and state.turn is not None
+        turn = state.turn
+        history = append_user_message(
+            state.history,
+            message_id=turn.user_message_id,
+            turn_id=turn.turn_id,
+            request_id=turn.request_id,
+            content=turn.utterance,
+            created_at=turn.opened_at,
+            max_turns=10,
+        )
+        failed = turn.model_copy(
+            update={"status": TurnStatus.FAILED, "safe_failure_code": "transient_exhausted"}
+        )
+        self.values = InvestigationState(
+            control=state.control, turn=failed, history=history
+        ).as_update()
+        if False:
+            yield None
+
+
+@pytest.mark.asyncio
+async def test_durable_failure_closes_telemetry_with_its_own_failure_class() -> None:
+    telemetry = RecordingTelemetry()
+
+    class Factory:
+        def create(self, **kwargs: Any) -> RecordingTelemetry:
+            return telemetry
+
+    service = InvokeTurn(
+        graph=FailingCommitGraph(),
+        locks=ThreadLockRegistry(),
+        policy=InvocationPolicy(
+            policy_version="policy-v1",
+            max_message_chars=1_000,
+            turn_timeout_s=30,
+            max_history_turns=10,
+        ),
+        clock=lambda: NOW,
+        telemetry=Factory(),
+    )
+    events = await _stream(service, _request())
+
+    assert events[-1]["event"] == "run.failed"
+    assert cast(dict[str, object], events[-1]["data"])["code"] == "transient_exhausted"
+    assert telemetry.closes == [("fail", "transient_exhaustion")]

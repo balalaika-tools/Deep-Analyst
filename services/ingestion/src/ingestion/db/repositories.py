@@ -54,7 +54,6 @@ async def _upsert(
 def _record_row(record: SourceRecord) -> dict[str, Any]:
     return {
         "record_id": record.record_id,
-        "case_id": record.case_id,
         "source_system": record.source_system,
         "source_record_id": record.source_record_id,
         "record_type": record.record_type,
@@ -119,7 +118,6 @@ class ChunkRepository:
             {
                 "chunk_id": f"{record.record_id}#{chunk.char_start}-{chunk.char_end}",
                 "record_id": record.record_id,
-                "case_id": record.case_id,
                 "char_start": chunk.char_start,
                 "char_end": chunk.char_end,
                 "text": chunk.text,
@@ -143,7 +141,6 @@ class GraphRepository:
         rows = [
             {
                 "entity_id": entity.entity_id,
-                "case_id": entity.case_id,
                 "entity_type": entity.entity_type.value,
                 "label": entity.label,
                 "normalized_key": entity.normalized_key,
@@ -158,7 +155,6 @@ class GraphRepository:
         rows = [
             {
                 "relationship_id": edge.relationship_id,
-                "case_id": edge.case_id,
                 "subject_entity_id": edge.subject.entity_id,
                 "predicate": edge.predicate.value,
                 "object_entity_id": edge.object.entity_id,
@@ -182,9 +178,8 @@ class RunLedgerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def has_completed(self, case_id: str, fingerprint: str) -> bool:
+    async def has_completed(self, fingerprint: str) -> bool:
         statement = select(func.count()).where(
-            col(IngestionRunRow.case_id) == case_id,
             col(IngestionRunRow.fingerprint) == fingerprint,
             col(IngestionRunRow.outcome) == "completed",
         )
@@ -193,7 +188,6 @@ class RunLedgerRepository:
     async def start(self, run: RunStart) -> str:
         row = IngestionRunRow(
             run_id=_run_id(run),
-            case_id=run.case_id,
             fingerprint=run.fingerprint,
             dataset_version=run.dataset_version,
             embedding_model_id=run.embedding_model_id,

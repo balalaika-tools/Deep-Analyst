@@ -17,7 +17,6 @@ from ingestion.domain.chunking import Chunk
 from ingestion.domain.edges import identifier_entities
 from ingestion.domain.identifiers import find_identifiers
 
-CASE = "case_trg_001"
 TEXT = (
     "A. Mavridis / Alexandros Mavridis, also known as Alex, was seen at Flisvos Marina. "
     "He uses telephone +30 697 123 4567. There is a possible, unconfirmed association "
@@ -26,9 +25,8 @@ TEXT = (
 
 
 def _context() -> ChunkContext:
-    rule_entities = identifier_entities(CASE, "docs:R-01", find_identifiers(TEXT))
+    rule_entities = identifier_entities("docs:R-01", find_identifiers(TEXT))
     return ChunkContext(
-        case_id=CASE,
         record_id="docs:R-01",
         chunk=Chunk(0, len(TEXT), TEXT),
         rule_entities=rule_entities,

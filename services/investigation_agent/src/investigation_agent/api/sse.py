@@ -141,9 +141,17 @@ async def stream_prepared_turn(
                         telemetry.record_first_safe_progress()
                     yield _encoded(_envelope(prepared, PublicEvent.PROGRESS, progress, clock=now))
         except asyncio.CancelledError:
-            prepared.cancellation.cancel()
+            if not _cooperatively_cancelled(prepared):
+                prepared.cancellation.cancel()
+                _close_telemetry(telemetry, outcome="cancelled")
+                raise
             _close_telemetry(telemetry, outcome="cancelled")
-            raise
+            if not await disconnect_probe():
+                terminal_emitted = True
+                yield _encoded(
+                    _failed_envelope(prepared, public_failure_for_code("cancelled"), clock=now)
+                )
+            return
         except Exception as exc:
             cancelled = prepared.cancellation.cancelled
             timed_out = isinstance(exc, TimeoutError)
@@ -196,6 +204,7 @@ async def stream_prepared_turn(
         _close_telemetry(
             telemetry,
             outcome=_terminal_outcome(state, terminal_emitted=terminal_emitted),
+            failure_class=_terminal_failure_class(state),
         )
     except asyncio.CancelledError:
         prepared.cancellation.cancel()
@@ -229,6 +238,47 @@ async def _traced_events(prepared: PreparedTurn) -> AsyncIterator[object]:
         except StopAsyncIteration:
             return
         yield event
+
+
+def _cooperatively_cancelled(prepared: PreparedTurn) -> bool:
+    """Distinguish the shutdown drain's cooperative cancel from the transport cancelling us.
+
+    The controller raises CancelledError from inside graph work while the streaming task itself
+    is not being cancelled, so the client is still connected and owed a terminal event.
+    """
+
+    if not prepared.cancellation.cancelled:
+        return False
+    task = asyncio.current_task()
+    return task is None or task.cancelling() == 0
+
+
+# Durable ``safe_failure_code`` values folded onto the telemetry failure taxonomy.
+_FAILURE_CLASSES: dict[str, str] = {
+    "invalid_request": "validation",
+    "conflict": "conflict",
+    "thread_full": "conflict",
+    "policy_rejected": "policy",
+    "no_support": "no_support",
+    "no_retrieved_support": "no_support",
+    "retrieval_incomplete": "no_support",
+    "grounding_failed": "no_support",
+    "transient_exhausted": "transient_exhaustion",
+    "budget_exhausted": "budget",
+    "cancelled": "cancelled",
+    "dependency_unavailable": "dependency",
+    "guardrail_unavailable": "dependency",
+    "persistence_failed": "dependency",
+    "delivery_failed": "dependency",
+    "incompatible_state": "incompatible_state",
+}
+
+
+def _terminal_failure_class(state: InvestigationState) -> str:
+    turn = state.turn
+    if turn is None or turn.status is not TurnStatus.FAILED:
+        return "internal"
+    return _FAILURE_CLASSES.get(turn.safe_failure_code or "", "internal")
 
 
 def _terminal_outcome(state: InvestigationState, *, terminal_emitted: bool) -> str:

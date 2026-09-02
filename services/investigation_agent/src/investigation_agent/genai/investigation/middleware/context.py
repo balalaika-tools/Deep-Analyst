@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
@@ -64,7 +65,7 @@ def build_system_prompt(
 ) -> str:
     """Build trusted instructions from control state, projection, and evidence cards."""
 
-    control = {"case_id": state.control.case_id, "policy_version": state.control.policy_version}
+    control = {"policy_version": state.control.policy_version}
     cards = [
         _card_summary(card, max_display_chars=max_card_display_chars)
         for card in state.evidence.ordered()
@@ -147,11 +148,26 @@ def _truncate_tool_contents(step: list[AnyMessage], *, max_chars: int) -> list[A
         return step
     per_message = max(64, max_chars // len(tool_messages))
     return [
-        message.model_copy(update={"content": str(message.content)[:per_message] + "\n[trimmed]"})
+        message.model_copy(
+            update={"content": _truncate_evidence(str(message.content), per_message)}
+        )
         if isinstance(message, ToolMessage) and len(str(message.content)) > per_message
         else message
         for message in step
     ]
+
+
+_EVIDENCE_TAG = re.compile(r"<(/?)((?:suspicious-)?untrusted-evidence)\b")
+
+
+def _truncate_evidence(content: str, max_chars: int) -> str:
+    """Cut tool output and re-close an evidence delimiter the cut left open."""
+
+    truncated = content[:max_chars] + "\n[trimmed]"
+    open_label: str | None = None
+    for closing, label in _EVIDENCE_TAG.findall(truncated):
+        open_label = None if closing else label
+    return f"{truncated}</{open_label}>" if open_label else truncated
 
 
 __all__ = ["ContextMiddleware", "build_system_prompt", "trim_turn_messages"]

@@ -28,7 +28,6 @@ class FindConnections:
         self,
         *,
         call_id: str,
-        case_id: str,
         request: FindConnectionsInput,
         deadline: float,
     ) -> FindConnectionsOutcome:
@@ -38,7 +37,6 @@ class FindConnections:
         rows_remaining = limits.max_rows
         physical_attempts = 1
         seed_nodes = await self._reader.load_graph_entities(
-            case_id=case_id,
             entity_ids=frozenset(request.seed_entity_ids),
             row_limit=min(rows_remaining, limits.max_nodes),
             deadline=deadline,
@@ -47,9 +45,7 @@ class FindConnections:
             : min(rows_remaining, limits.max_nodes)
         ]
         rows_remaining -= len(seed_nodes)
-        nodes = {
-            item.entity_id: item for item in seed_nodes if _node_supported(item, case_id=case_id)
-        }
+        nodes = {item.entity_id: item for item in seed_nodes if _node_supported(item)}
         active: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
             ((seed,), ()) for seed in sorted(nodes)
         ]
@@ -60,7 +56,6 @@ class FindConnections:
             if _at_limit(active, paths, edges, rows_remaining=rows_remaining, limits=limits):
                 break
             hop_edges = await self._load_edges(
-                case_id=case_id,
                 active=active,
                 filters=request.filters,
                 row_limit=min(rows_remaining, limits.max_edges - len(edges)),
@@ -69,7 +64,6 @@ class FindConnections:
             physical_attempts += 1
             rows_remaining -= len(hop_edges)
             loaded = await self._load_missing_nodes(
-                case_id=case_id,
                 hop_edges=hop_edges,
                 known_nodes=nodes,
                 row_limit=min(rows_remaining, limits.max_nodes - len(nodes)),
@@ -78,18 +72,13 @@ class FindConnections:
             if loaded:
                 physical_attempts += 1
                 rows_remaining -= len(loaded)
-                nodes.update(
-                    (item.entity_id, item)
-                    for item in loaded
-                    if _node_supported(item, case_id=case_id)
-                )
+                nodes.update((item.entity_id, item) for item in loaded if _node_supported(item))
             active = _extend_paths(
                 active,
                 hop_edges,
                 nodes=nodes,
                 edges=edges,
                 paths=paths,
-                case_id=case_id,
                 limits=limits,
             )
 
@@ -119,14 +108,12 @@ class FindConnections:
     async def _load_edges(
         self,
         *,
-        case_id: str,
         active: list[tuple[tuple[str, ...], tuple[str, ...]]],
         filters: ConnectionFilters,
         row_limit: int,
         deadline: float,
     ) -> tuple[GraphEdge, ...]:
         loaded = await self._reader.load_graph_edges(
-            case_id=case_id,
             frontier_entity_ids=frozenset(node_ids[-1] for node_ids, _edge_ids in active),
             filters=filters,
             row_limit=row_limit,
@@ -135,13 +122,12 @@ class FindConnections:
         return tuple(
             edge
             for edge in sorted(loaded, key=lambda item: item.relationship_id)
-            if _edge_supported(edge, case_id=case_id, filters=filters)
+            if _edge_supported(edge, filters=filters)
         )[:row_limit]
 
     async def _load_missing_nodes(
         self,
         *,
-        case_id: str,
         hop_edges: tuple[GraphEdge, ...],
         known_nodes: dict[str, GraphNode],
         row_limit: int,
@@ -156,7 +142,6 @@ class FindConnections:
         if not endpoint_ids or row_limit <= 0:
             return ()
         loaded = await self._reader.load_graph_entities(
-            case_id=case_id,
             entity_ids=endpoint_ids,
             row_limit=row_limit,
             deadline=deadline,
@@ -187,7 +172,6 @@ def _extend_paths(
     nodes: dict[str, GraphNode],
     edges: dict[str, GraphEdge],
     paths: list[ConnectionPath],
-    case_id: str,
     limits: GraphLimits,
 ) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
     next_active: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
@@ -196,7 +180,7 @@ def _extend_paths(
             neighbor = _neighbor(edge, node_ids[-1])
             if neighbor is None or neighbor in node_ids or neighbor not in nodes:
                 continue
-            if edge.case_id != case_id or len(edges) >= limits.max_edges:
+            if len(edges) >= limits.max_edges:
                 continue
             candidate = ((*node_ids, neighbor), (*edge_ids, edge.relationship_id))
             edges[edge.relationship_id] = edge
@@ -255,12 +239,12 @@ def _neighbor(edge: GraphEdge, entity_id: str) -> str | None:
     return edge.subject_entity_id if edge.object_entity_id == entity_id else None
 
 
-def _node_supported(node: GraphNode, *, case_id: str) -> bool:
-    return node.case_id == case_id and all(source.case_id == case_id for source in node.sources)
+def _node_supported(node: GraphNode) -> bool:
+    return bool(node.sources)
 
 
-def _edge_supported(edge: GraphEdge, *, case_id: str, filters: ConnectionFilters) -> bool:
-    if edge.case_id != case_id or any(source.case_id != case_id for source in edge.sources):
+def _edge_supported(edge: GraphEdge, *, filters: ConnectionFilters) -> bool:
+    if not edge.sources:
         return False
     if edge.status not in filters.statuses:
         return False
@@ -282,7 +266,6 @@ def _graph_evidence(
     evidence = [
         GraphEvidence(
             evidence_id=f"entity:{node.entity_id}:{source.source_ref.record_id}",
-            case_id=node.case_id,
             content_hash=source.content_hash,
             source_refs=(source.source_ref,),
             kind="entity",
@@ -295,7 +278,6 @@ def _graph_evidence(
     evidence.extend(
         GraphEvidence(
             evidence_id=f"relationship:{edge.relationship_id}:{source.source_ref.record_id}",
-            case_id=edge.case_id,
             content_hash=source.content_hash,
             source_refs=(source.source_ref,),
             kind="relationship",

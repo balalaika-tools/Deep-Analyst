@@ -242,7 +242,7 @@ class Settings(BaseSettings):
         default=None, alias="OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
     )
     log_export: LogExport = Field(default="stdout", alias="LOG_EXPORT")
-    capture_ai_content: bool = Field(default=False, alias="CAPTURE_AI_CONTENT")
+    capture_ai_content: bool = Field(default=True, alias="CAPTURE_AI_CONTENT")
     log_level: LogLevel = Field(default="INFO", alias="LOG_LEVEL")
 
     @model_validator(mode="after")

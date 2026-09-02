@@ -91,7 +91,7 @@ async def test_normal_cross_source_synthesis_commits_a_verified_answer(support: 
     assert state.usage.tool_calls == 2 and state.usage.model_calls >= 2
     snapshot = await harness.agent.aget_state(harness.config("thread-1"))
     assert snapshot.values["messages"] == []
-    assert [c for c in behaviour.contexts][0].case_id == "case-1"
+    assert [c for c in behaviour.contexts][0].thread_id == "thread-1"
     custom = [e["data"] for e in events if e["type"] == "custom"]
     assert custom and all(set(c) <= {"phase", "tool", "attempt", "count"} for c in custom)
     updates = [name for e in events if e["type"] == "updates" for name in e["data"]]
@@ -170,9 +170,7 @@ async def test_greeting_is_refused_immediately_without_model_calls(support: Any)
         del utterance, context
         raise AssertionError("a greeting should not call the guardrail model")
 
-    harness = support.build_harness(
-        _search_then_answer(support), guardrail=guardrail_must_not_run
-    )
+    harness = support.build_harness(_search_then_answer(support), guardrail=guardrail_must_not_run)
 
     state, events = await harness.run_turn(message="Yoo")
 
@@ -807,3 +805,137 @@ async def test_cancellation_stops_new_attempts_and_leaves_the_turn_running(suppo
     assert harness.model.calls == 1
     assert harness.verifier.calls == [] and harness.projection.calls == []
     assert [m.role for m in state.history.messages] == [HistoryRole.USER]
+
+
+@pytest.mark.asyncio
+async def test_native_structured_output_validation_failure_is_repaired_not_fatal(
+    support: Any,
+) -> None:
+    from langchain.agents.structured_output import StructuredOutputValidationError
+
+    invalid = StructuredOutputValidationError(
+        "AnswerDraft", ValueError("claim IDs must be unique"), AIMessage(content="{}")
+    )
+    harness = support.build_harness(
+        _search_then_answer(support),
+        behaviour=_behaviour(support),
+        verifier_results=[support.entailed("k1")],
+        errors={2: invalid},
+    )
+
+    state, _ = await harness.run_turn()
+
+    assert state.turn is not None and state.turn.status is TurnStatus.COMPLETED
+    assert state.turn.repair_count == 1
+    assert state.turn.safe_failure_code is None
+    assert harness.model.calls == 3
+    assert "invalid_answer_draft" in harness.model.seen[-1][-1].content
+
+
+@pytest.mark.asyncio
+async def test_verifier_schema_failure_is_repaired_once_then_fails_closed(support: Any) -> None:
+    from investigation_agent.genai.investigation.schemas import GroundingVerdict
+    from pydantic import ValidationError
+
+    def schema_error() -> ValidationError:
+        try:
+            GroundingVerdict.model_validate({"claims": "not-a-list"})
+        except ValidationError as exc:
+            return exc
+        raise AssertionError("expected a validation error")
+
+    harness = support.build_harness(
+        _search_then_answer(support),
+        behaviour=_behaviour(support),
+        verifier_results=[schema_error(), schema_error()],
+    )
+
+    state, _ = await harness.run_turn()
+
+    assert state.turn is not None and state.turn.status is TurnStatus.FAILED
+    assert state.turn.safe_failure_code == "grounding_failed"
+    assert state.turn.repair_count == 1
+    assert "malformed_verifier_output" in state.turn.verification_violations
+
+
+@pytest.mark.asyncio
+async def test_repair_model_calls_count_against_the_loop_limit(support: Any) -> None:
+    responses = _search_then_answer(support, evidence_ids=("missing-1",))
+    harness = support.build_harness(
+        responses,
+        behaviour=_behaviour(support),
+        closure_results=[TimeoutError("closure unavailable")],
+        agent_limits=support.limits(main_model_call_limit=3, closure_model_calls=1),
+    )
+
+    state, _ = await harness.run_turn()
+
+    # search + rejected draft exhaust the two loop calls; the repair must not run a third.
+    assert harness.model.calls == 2
+    assert state.turn is not None and state.turn.status is TurnStatus.FAILED
+    assert state.turn.repair_count == 1
+    assert state.turn.exhausted_limit == "model_calls"
+    snapshot = await harness.agent.aget_state(harness.config("thread-1"))
+    assert snapshot.values["thread_model_call_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_budget_exhausted_inside_a_tool_is_reported_as_budget_exhausted(
+    support: Any,
+) -> None:
+    from investigation_agent.core.errors import BudgetExhaustedFailure
+
+    responses = _search_then_answer(
+        support,
+        answer="No supporting evidence was retrieved within the execution limit.",
+        evidence_ids=(),
+        kind="limitation",
+    )
+    behaviour = support.FakeToolBehaviour(outcomes={"search_evidence": [BudgetExhaustedFailure()]})
+    harness = support.build_harness(responses, behaviour=behaviour)
+
+    state, _ = await harness.run_turn()
+
+    tool_message = harness.model.seen[1][-1]
+    assert '"status": "budget_exhausted"' in str(tool_message.content)
+    assert state.turn is not None and state.turn.status is TurnStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_evidence_bound_holds_across_turns_and_the_channel_does_not_resurrect_cards(
+    support: Any,
+) -> None:
+    def script(evidence_id: str) -> list[AIMessage]:
+        return _search_then_answer(
+            support, answer=f"Seen [{evidence_id}].", evidence_ids=(evidence_id,)
+        )
+
+    responses = [*script("e1"), *script("e2"), *script("e3")]
+    behaviour = support.FakeToolBehaviour(
+        outcomes={
+            "search_evidence": [
+                support.outcome("search_evidence", items=[support.evidence(f"e{n}")])
+                for n in (1, 2, 3)
+            ]
+        }
+    )
+    projection = support.FakeProjectionModel(
+        lambda request, _v: WorkingProjection(source_turn_id=request.source_turn_id)
+    )
+    harness = support.build_harness(
+        responses,
+        behaviour=behaviour,
+        verifier_results=[support.entailed("k1")] * 3,
+        projection=projection,
+        agent_limits=support.limits(max_evidence_cards=2),
+    )
+
+    for n in (1, 2, 3):
+        harness.model.responses = script(f"e{n}")
+        harness.model.calls = 0
+        state, _ = await harness.run_turn(request_id=f"request-{n}")
+        assert state.turn is not None and state.turn.status is TurnStatus.COMPLETED
+
+    assert sorted(state.evidence.cards) == ["e2", "e3"]
+    assert state.evidence.dropped_cards == 1
+    assert state.evidence.coverage_notice is not None

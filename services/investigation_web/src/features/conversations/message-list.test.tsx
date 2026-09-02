@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { MessageItem } from "@/features/investigations/contracts";
@@ -33,7 +34,7 @@ describe("MessageList", () => {
     expect(screen.queryByLabelText("assistant message")).not.toBeInTheDocument();
   });
 
-  it("renders accessible citation metadata", () => {
+  it("renders citation metadata in an accessible disclosure", async () => {
     const assistant: MessageItem = {
       ...interrupted,
       message_id: "message-2",
@@ -58,8 +59,41 @@ describe("MessageList", () => {
         turn={initialTurnState}
       />,
     );
-    expect(screen.getByText("1 source")).toBeVisible();
-    expect(screen.getByText("Record record-7")).toBeInTheDocument();
+    expect(screen.getByText("1 evidence source")).toBeVisible();
+    expect(screen.getByText("Record record-7 · Field amount")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Verified response" })).toBeVisible();
+    const disclosure = screen.getByRole("button", { name: /1 evidence source/i });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Hide details")).toBeVisible();
+  });
+
+  it("gives completed answers readable structure without interpreting HTML", () => {
+    const assistant: MessageItem = {
+      ...interrupted,
+      message_id: "message-rich",
+      role: "assistant",
+      content: "## Finding\n\nThe **reviewed records** show `account-77`.\n\n- First transfer\n- Second transfer\n\n<script>alert('unsafe')</script>",
+      turn_status: "completed",
+    };
+
+    const { container } = render(
+      <MessageList
+        loadingMore={false}
+        messages={[assistant]}
+        nextCursor={null}
+        onLoadMore={vi.fn()}
+        turn={initialTurnState}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Finding" })).toBeVisible();
+    expect(screen.getByRole("list")).toHaveTextContent("First transferSecond transfer");
+    expect(screen.getByText("reviewed records", { selector: "strong" })).toBeVisible();
+    expect(screen.getByText("account-77", { selector: "code" })).toBeVisible();
+    expect(screen.getByText("<script>alert('unsafe')</script>")).toBeVisible();
+    expect(container.querySelector("script")).not.toBeInTheDocument();
   });
 
   it("shows immediate activity and replaces its label with streamed progress", () => {
@@ -69,7 +103,6 @@ describe("MessageList", () => {
       payload: {
         request_id: "request-new",
         thread_id: "thread-1",
-        case_id: "case-1",
         message: "Investigate transfers",
       },
     };

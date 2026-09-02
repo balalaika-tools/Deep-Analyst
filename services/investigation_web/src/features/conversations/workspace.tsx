@@ -12,17 +12,20 @@ import { ThreadSidebar } from "@/features/threads/thread-sidebar";
 import { mergeMessages, mergeThreads } from "./collections";
 import { Composer } from "./composer";
 import { MessageList } from "./message-list";
+import { displayStreamEvent } from "./stream-pacing";
 import { initialTurnState, isTurnActive, turnReducer } from "./turn-state";
 
 interface ConversationWorkspaceProps {
-  caseId: string;
   threadId: string | null;
   initialThreads: ThreadPage;
   initialMessages: MessagePage;
 }
 
-export function ConversationWorkspace({
-  caseId,
+export function ConversationWorkspace(props: ConversationWorkspaceProps) {
+  return <ConversationWorkspaceState key={props.threadId ?? "new-conversation"} {...props} />;
+}
+
+function ConversationWorkspaceState({
   threadId,
   initialThreads,
   initialMessages,
@@ -75,7 +78,11 @@ export function ConversationWorkspace({
     try {
       const persisted = await refreshHistory(targetThreadId, requestId);
       if (persisted && resetWhenPersisted) dispatch({ type: "reset" });
-      router.refresh();
+      if (persisted) {
+        router.replace(`/threads/${encodeURIComponent(targetThreadId)}`, { scroll: false });
+      } else {
+        router.refresh();
+      }
     } catch {
       // The provisional state remains visible until a later manual navigation or retry.
     }
@@ -86,11 +93,17 @@ export function ConversationWorkspace({
     abortRef.current?.abort();
     abortRef.current = controller;
     dispatch({ type: "begin", payload });
+    let displayDeltaIndex = 0;
 
     try {
       const terminal = await invokeInvestigation(payload, {
         signal: controller.signal,
-        onEvent: (event) => dispatch({ type: "event", event }),
+        onEvent: (event) => displayStreamEvent(
+          event,
+          () => displayDeltaIndex++,
+          (displayEvent) => dispatch({ type: "event", event: displayEvent }),
+          controller.signal,
+        ),
       });
       await reconcile(payload.thread_id, payload.request_id, terminal.event === "run.completed");
     } catch (error) {
@@ -124,16 +137,10 @@ export function ConversationWorkspace({
     const targetThreadId = currentThreadId ?? crypto.randomUUID();
     if (!currentThreadId) {
       setCurrentThreadId(targetThreadId);
-      window.history.replaceState(
-        null,
-        "",
-        `/cases/${encodeURIComponent(caseId)}/threads/${encodeURIComponent(targetThreadId)}`,
-      );
     }
     void runAttempt({
       request_id: crypto.randomUUID(),
       thread_id: targetThreadId,
-      case_id: caseId,
       message,
     });
   }
@@ -186,7 +193,7 @@ export function ConversationWorkspace({
       setThreads((current) => current.filter((thread) => thread.thread_id !== deleteTarget.thread_id));
       const deletedActive = deleteTarget.thread_id === currentThreadId;
       setDeleteTarget(null);
-      if (deletedActive) router.push(`/cases/${encodeURIComponent(caseId)}`);
+      if (deletedActive) router.push("/");
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "The conversation could not be deleted.");
     } finally {
@@ -196,7 +203,6 @@ export function ConversationWorkspace({
 
   const sidebar = (
     <ThreadSidebar
-      activeCaseId={caseId}
       activeThreadId={currentThreadId}
       activeTurn={active}
       loadingMore={loadingThreads}
@@ -235,8 +241,8 @@ export function ConversationWorkspace({
             type="button"
           ><MenuIcon /></button>
           <div className="case-title">
-            <span className="eyebrow">Active case</span>
-            <h1 id="conversation-title">{caseId}</h1>
+            <span className="eyebrow">Deep Analyst</span>
+            <h1 id="conversation-title">Conversation</h1>
           </div>
           <div className="case-status"><span className="online-dot" /> Agent ready</div>
         </header>
@@ -268,7 +274,7 @@ export function ConversationWorkspace({
           >
             <span className="dialog-icon" aria-hidden="true">!</span>
             <h2 id="delete-title">Delete this conversation?</h2>
-            <p id="delete-description">The saved investigation for <strong>{deleteTarget.case_id}</strong> will be permanently removed.</p>
+            <p id="delete-description">This saved conversation will be permanently removed.</p>
             {deleteError ? <p className="dialog-error" role="alert">{deleteError}</p> : null}
             <div className="dialog-actions">
               <button className="button button-secondary" disabled={deleting} onClick={() => setDeleteTarget(null)} ref={dialogCancelRef} type="button">Keep conversation</button>

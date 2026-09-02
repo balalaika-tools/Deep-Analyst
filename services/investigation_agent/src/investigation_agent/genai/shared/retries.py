@@ -8,8 +8,34 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 from langchain.agents.middleware import ModelRetryMiddleware, ToolRetryMiddleware
 from langchain_core.tools import BaseTool
+
+# botocore transport failures do not subclass the built-in TimeoutError/ConnectionError.
+BOTOCORE_TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
+    ReadTimeoutError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ConnectionClosedError,
+)
+# Bedrock reports throttling and capacity outcomes as modelled ClientErrors, so they are
+# recognised by service error code rather than by exception type.
+TRANSIENT_CLIENT_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "ThrottlingException",
+        "TooManyRequestsException",
+        "ServiceUnavailableException",
+        "ModelNotReadyException",
+        "InternalServerException",
+    }
+)
 
 
 class OperationCancelledError(asyncio.CancelledError):
@@ -69,6 +95,17 @@ class AttemptResult[T]:
     attempts: int
 
 
+def is_transient_error(exc: BaseException, retry_on: tuple[type[BaseException], ...]) -> bool:
+    """Whether ``exc`` is an allowlisted transient failure or a retryable AWS client error."""
+
+    if isinstance(exc, retry_on):
+        return True
+    if not isinstance(exc, ClientError):
+        return False
+    code = exc.response.get("Error", {}).get("Code")
+    return code in TRANSIENT_CLIENT_ERROR_CODES
+
+
 async def retry_async[T](
     operation: Callable[[int], Awaitable[T]],
     *,
@@ -95,7 +132,9 @@ async def retry_async[T](
         attempts_started = attempt
         try:
             value = await operation(attempt)
-        except retry_on as exc:
+        except BaseException as exc:
+            if not is_transient_error(exc, retry_on):
+                raise
             last_error = exc
             if on_attempt:
                 on_attempt(attempt, exc)
@@ -132,7 +171,7 @@ def model_retry_middleware(
 
     return ModelRetryMiddleware(
         max_retries=policy.max_attempts - 1,
-        retry_on=retry_on,
+        retry_on=lambda exc: is_transient_error(exc, retry_on),
         backoff_factor=policy.backoff_factor,
         initial_delay=policy.initial_delay_s,
         max_delay=policy.max_delay_s,
@@ -152,7 +191,7 @@ def tool_retry_middleware(
     return ToolRetryMiddleware(
         max_retries=policy.max_attempts - 1,
         tools=tools,
-        retry_on=retry_on,
+        retry_on=lambda exc: is_transient_error(exc, retry_on),
         backoff_factor=policy.backoff_factor,
         initial_delay=policy.initial_delay_s,
         max_delay=policy.max_delay_s,
@@ -162,11 +201,14 @@ def tool_retry_middleware(
 
 
 __all__ = [
+    "BOTOCORE_TRANSIENT_ERRORS",
+    "TRANSIENT_CLIENT_ERROR_CODES",
     "AttemptResult",
     "CancellationToken",
     "OperationCancelledError",
     "RetryPolicy",
     "TransientExhaustedError",
+    "is_transient_error",
     "model_retry_middleware",
     "retry_async",
     "tool_retry_middleware",

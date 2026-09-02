@@ -156,12 +156,9 @@ class EvidenceBucket:
 class S3EditionSources:
     """Lazy file adapters: raw evidence is materialized only after the skip check."""
 
-    def __init__(
-        self, bucket: EvidenceBucket, edition: str, case_id: str, engine: AsyncEngine
-    ) -> None:
+    def __init__(self, bucket: EvidenceBucket, edition: str, engine: AsyncEngine) -> None:
         self._bucket = bucket
         self._edition = edition
-        self._case_id = case_id
         self._engine = engine
         self._materialization: Any | None = None
         self._sources: EditionSources | None = None
@@ -175,7 +172,7 @@ class S3EditionSources:
             materialization = self._bucket.materialize_edition(self._edition)
             edition_dir = materialization.__enter__()
             self._materialization = materialization
-            self._sources = EditionSources(edition_dir, self._case_id, self._engine)
+            self._sources = EditionSources(edition_dir, self._engine)
         return await self._sources.load(source_system)
 
     def close(self) -> None:

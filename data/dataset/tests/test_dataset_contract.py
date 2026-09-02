@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from dataset import main as GENERATOR
+from dataset.core.util import _global_record_id
 
 DATASET_DIR = Path(__file__).resolve().parents[1]
 DATA_ROOT = DATASET_DIR / "editions" / "en" / "data"
@@ -30,7 +31,7 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
 
 
 def _sql_insert_ids(sql: str, table: str) -> list[str]:
-    """Extract the stable second-column ID from one generated INSERT block."""
+    """Extract the stable first-column ID from one generated INSERT block."""
     pattern = re.compile(
         r"\bINSERT\s+INTO\s+" + re.escape(table) + r"\s*\([^;]*?\)\s*VALUES\s*(.*?);",
         re.IGNORECASE | re.DOTALL,
@@ -40,7 +41,7 @@ def _sql_insert_ids(sql: str, table: str) -> list[str]:
         raise AssertionError(f"expected one INSERT block for {table}, found {len(blocks)}")
 
     rows = [line.strip() for line in blocks[0].splitlines() if line.strip().startswith("(")]
-    id_pattern = re.compile(r"^\('(?:[^']|'')*',\s*'((?:[^']|'')*)'")
+    id_pattern = re.compile(r"^\('((?:[^']|'')*)'")
     ids = []
     for row in rows:
         match = id_pattern.match(row)
@@ -157,6 +158,13 @@ class DatasetContractTests(unittest.TestCase):
             sum(len(ids) for ids in raw_ids.values()),
             expected_totals["all_source_records"],
         )
+
+    def test_source_local_identifier_collisions_remain_distinct(self) -> None:
+        self.assertNotEqual(
+            _global_record_id("cdr", "shared-1"),
+            _global_record_id("email", "shared-1"),
+        )
+        self.assertEqual(_global_record_id("cdr", "shared-1"), "cdr:shared-1")
 
     def test_greek_alternate_edition_is_verified_and_semantically_equivalent(self) -> None:
         english_manifest = self._verified_manifest(DATA_ROOT)
@@ -308,11 +316,11 @@ class DatasetContractTests(unittest.TestCase):
         self.assertRegex(sql, r"(?i)\bCREATE\s+TABLE\s+transactions\b")
         self.assertRegex(
             sql,
-            r"(?i)\bFOREIGN\s+KEY\s*\(case_id,\s*debtor_iban\)",
+            r"(?i)\bFOREIGN\s+KEY\s*\(debtor_iban\)",
         )
         self.assertRegex(
             sql,
-            r"(?i)\bFOREIGN\s+KEY\s*\(case_id,\s*creditor_iban\)",
+            r"(?i)\bFOREIGN\s+KEY\s*\(creditor_iban\)",
         )
         for sqlite_syntax in (
             r"(?im)^\s*PRAGMA\b",
@@ -329,6 +337,21 @@ class DatasetContractTests(unittest.TestCase):
         self.assertEqual(len(set(account_ids)), 18)
         self.assertEqual(len(transaction_ids), 35)
         self.assertEqual(len(set(transaction_ids)), 35)
+
+    def test_generated_artifacts_contain_no_removed_scope_field(self) -> None:
+        for root in (DATA_ROOT, GREEK_DATA_ROOT):
+            offenders = [
+                path.relative_to(root).as_posix()
+                for path in root.rglob("*")
+                if path.is_file()
+                and path.suffix != ".bin"
+                and re.search(
+                    rf"{'_'.join(('case', 'id'))}|{'-'.join(('x', 'case', 'id'))}",
+                    path.read_text(encoding="utf-8", errors="strict"),
+                    re.IGNORECASE,
+                )
+            ]
+            self.assertEqual(offenders, [])
 
 
 if __name__ == "__main__":

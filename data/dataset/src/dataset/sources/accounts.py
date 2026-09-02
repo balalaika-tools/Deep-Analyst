@@ -6,7 +6,7 @@ from dataset.core import state
 from dataset.core.util import _make_gr_iban
 
 
-def build_accounts(case_id: str) -> list[dict[str, Any]]:
+def build_accounts() -> list[dict[str, Any]]:
     roster = [
         ("acct_pa", "Alexandros Mavridis", "person", "7719", "2021-04-12"),
         ("acct_pr", "K. Rossi", "person", "2205", "2022-09-08"),
@@ -31,7 +31,6 @@ def build_accounts(case_id: str) -> list[dict[str, Any]]:
     for serial, (account_id, name, holder_type, ending, opened_date) in enumerate(roster, 1):
         accounts.append(
             {
-                "case_id": case_id,
                 "account_id": account_id,
                 "iban": _make_gr_iban(serial, ending),
                 "holder_name": name,

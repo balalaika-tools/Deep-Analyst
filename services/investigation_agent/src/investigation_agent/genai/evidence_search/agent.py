@@ -52,7 +52,6 @@ class RetrievalTransientError(ConnectionError):
 class SearchInvocation:
     """Invocation-local, trusted state the nested model can neither read nor write."""
 
-    case_id: str
     deadline: float
     cancellation: CancellationToken
     excluded_chunk_ids: set[str]
@@ -169,7 +168,6 @@ class SearchEvidenceAgent:
             result = await retrieve_hybrid(
                 reader=reader,
                 embedder=embedder,
-                case_id=invocation.case_id,
                 query=proposal,
                 excluded_chunk_ids=frozenset(invocation.excluded_chunk_ids),
                 deadline=invocation.deadline,
@@ -211,14 +209,12 @@ class SearchEvidenceAgent:
         intent: SearchIntent,
         *,
         call_id: str,
-        case_id: str,
         deadline: float,
         cancellation: CancellationToken,
         seen_chunk_ids: frozenset[str],
         progress: ProgressWriter | None = None,
     ) -> SearchOutcome:
         invocation = SearchInvocation(
-            case_id=case_id,
             deadline=deadline,
             cancellation=cancellation,
             excluded_chunk_ids=set(seen_chunk_ids),
@@ -291,7 +287,6 @@ def _outcome(
         evidence.append(
             SearchEvidence(
                 evidence_id=chunk_id,
-                case_id=candidate.case_id,
                 content_hash=candidate.content_hash,
                 source_refs=candidate.source_refs,
                 content=candidate.text,

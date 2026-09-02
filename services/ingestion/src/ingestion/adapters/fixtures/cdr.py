@@ -20,7 +20,7 @@ _CHANNEL = {"MOC": "call", "MTC": "call", "SMS-MO": "sms", "SMS-MT": "sms"}
 _DIRECTION = {"MOC": "out", "MTC": "in", "SMS-MO": "out", "SMS-MT": "in"}
 
 
-def _record(case_id: str, row: dict[str, str]) -> tuple[SourceRecord, CommunicationProjection]:
+def _record(row: dict[str, str]) -> tuple[SourceRecord, CommunicationProjection]:
     event_time = to_utc(row["ts_local"])
     imei = normalize_imei(row["imei"]) if row["imei"] else None
     calling = normalize_phone(row["calling_msisdn"])
@@ -36,7 +36,6 @@ def _record(case_id: str, row: dict[str, str]) -> tuple[SourceRecord, Communicat
         },
     }
     record = SourceRecord(
-        case_id=case_id,
         source_system=SOURCE_SYSTEM,
         source_record_id=row["record_id"],
         record_type="cdr",
@@ -49,7 +48,6 @@ def _record(case_id: str, row: dict[str, str]) -> tuple[SourceRecord, Communicat
     )
     projection = CommunicationProjection(
         record_id=record.record_id,
-        case_id=case_id,
         channel=_CHANNEL[row["record_type"]],
         direction=_DIRECTION[row["record_type"]],
         from_endpoint=calling,
@@ -64,9 +62,9 @@ def _record(case_id: str, row: dict[str, str]) -> tuple[SourceRecord, Communicat
     return record, projection
 
 
-def load_cdr(edition_dir: Path, case_id: str) -> SourceBatch:
+def load_cdr(edition_dir: Path) -> SourceBatch:
     with (edition_dir / RELATIVE_PATH).open(encoding="utf-8", newline="") as handle:
-        rows = [_record(case_id, row) for row in csv.DictReader(handle)]
+        rows = [_record(row) for row in csv.DictReader(handle)]
     return SourceBatch(
         source_system=SOURCE_SYSTEM,
         records=[record for record, _ in rows],

@@ -13,13 +13,11 @@ from evidence_model import (
 )
 from pydantic import ValidationError
 
-CASE = "case_trg_001"
 REF = SourceRef(record_id="cdr:c01", locator=FieldLocator(field="calling_msisdn"))
 
 
 def phone(key: str) -> EntityDraft:
     return EntityDraft(
-        case_id=CASE,
         entity_type=EntityType.PHONE,
         label=f"+{key}",
         normalized_key=key,
@@ -35,7 +33,6 @@ def test_keyed_entity_id_is_the_normalized_value_and_is_reusable() -> None:
 def test_actor_mentions_from_different_records_stay_distinct() -> None:
     def person(record_id: str) -> EntityDraft:
         return EntityDraft(
-            case_id=CASE,
             entity_type=EntityType.PERSON,
             label="Alexandros Mavridis",
             scope_record_id=record_id,
@@ -48,10 +45,9 @@ def test_actor_mentions_from_different_records_stay_distinct() -> None:
 
 def test_keyed_type_without_key_and_actor_with_key_are_both_rejected() -> None:
     with pytest.raises((OntologyViolation, ValidationError), match="requires a normalized key"):
-        EntityDraft(case_id=CASE, entity_type=EntityType.PHONE, label="x", source_refs=[REF])
+        EntityDraft(entity_type=EntityType.PHONE, label="x", source_refs=[REF])
     with pytest.raises((OntologyViolation, ValidationError), match="must not carry"):
         EntityDraft(
-            case_id=CASE,
             entity_type=EntityType.PERSON,
             label="x",
             normalized_key="x",
@@ -63,12 +59,23 @@ def test_keyed_type_without_key_and_actor_with_key_are_both_rejected() -> None:
 def test_entity_without_evidence_is_rejected() -> None:
     with pytest.raises(ValidationError):
         EntityDraft(
-            case_id=CASE,
             entity_type=EntityType.PHONE,
             label="x",
             normalized_key="1",
             source_refs=[],
         )
+
+
+def test_removed_scope_property_is_rejected() -> None:
+    payload = {
+        "entity_type": EntityType.PHONE,
+        "label": "x",
+        "normalized_key": "1",
+        "source_refs": [REF],
+        "case" + "_id": "obsolete",
+    }
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        EntityDraft.model_validate(payload)
 
 
 def test_with_refs_merges_without_duplicates() -> None:
@@ -79,7 +86,6 @@ def test_with_refs_merges_without_duplicates() -> None:
 
 def _relationship(**overrides: object) -> RelationshipDraft:
     values: dict[str, object] = {
-        "case_id": CASE,
         "subject": EndpointRef(entity_id="PHONE:1", entity_type=EntityType.PHONE),
         "predicate": Predicate.COMMUNICATED_WITH,
         "object": EndpointRef(entity_id="PHONE:2", entity_type=EntityType.PHONE),

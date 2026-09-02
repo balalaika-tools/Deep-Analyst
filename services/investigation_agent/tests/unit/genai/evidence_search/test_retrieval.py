@@ -30,7 +30,6 @@ def candidate(
     return RetrievalCandidate(
         chunk_id=chunk_id,
         record_id=f"record:{chunk_id}",
-        case_id="case-a",
         text=text,
         content_hash=HASH,
         source_ref=SourceRef(
@@ -90,7 +89,6 @@ class _PartialReader:
     async def search_lexical(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         excluded_chunk_ids: frozenset[str],
         deadline: float,
@@ -98,18 +96,17 @@ class _PartialReader:
         del query, deadline
         self.exclusions.append(excluded_chunk_ids)
         item = candidate("c-1", RetrievalModality.BM25, rank=1, score=3.0)
-        return [item.model_copy(update={"case_id": case_id})]
+        return [item]
 
     async def search_vector(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         embedding: Sequence[float],
         excluded_chunk_ids: frozenset[str],
         deadline: float,
     ) -> Sequence[RetrievalCandidate]:
-        del case_id, query, embedding, excluded_chunk_ids, deadline
+        del query, embedding, excluded_chunk_ids, deadline
         raise ConnectionError("provider detail must not escape")
 
 
@@ -120,7 +117,6 @@ async def test_modality_failure_returns_a_safe_partial_batch() -> None:
     result = await retrieve_hybrid(
         reader=reader,
         embedder=_Embedder(),
-        case_id="case-a",
         query=RetrievalQuery(query="invoice reference"),
         excluded_chunk_ids=frozenset({"old"}),
         deadline=asyncio.get_running_loop().time() + 5,

@@ -59,7 +59,6 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import tool
 
-CASE = "case-a"
 POLICY = RetryPolicy(
     max_attempts=2, initial_delay_s=0, backoff_factor=1, max_delay_s=0, jitter=False
 )
@@ -90,7 +89,12 @@ class ScriptedChatModel(BaseChatModel):
         del stop, run_manager, kwargs
         self.seen.append(list(messages))
         self.calls += 1
-        template = self.responses[min(self.calls - 1, len(self.responses) - 1)]
+        is_follow_up = any("What was the first transfer amount?" in str(item.content) for item in messages)
+        template = (
+            AIMessage(content="", tool_calls=[_draft("c5", ANSWER_2, "t_85")])
+            if is_follow_up
+            else self.responses[min(self.calls - 1, len(self.responses) - 1)]
+        )
         message = AIMessage(
             content=template.content,
             tool_calls=[{**c, "id": f"{c['id']}-{self.calls}"} for c in template.tool_calls],
@@ -126,7 +130,6 @@ def _evidence(evidence_id: str, kind: str, content: str) -> EvidenceItem:
     return EvidenceItem(
         evidence_id=evidence_id,
         kind=kind,
-        case_id=CASE,
         content_hash=canonical_fingerprint(content),
         source_refs=(
             SourceRef(record_id=f"record-{evidence_id}", locator=FieldLocator(field="text")),
@@ -150,12 +153,11 @@ class Tools:
             ) -> tuple[str, ToolOutcome]:
                 del intent
                 calls.append(name)
-                assert runtime.context.case_id == CASE
+                assert runtime.context.thread_id
                 return status.value, ToolOutcome(
                     call_id=runtime.tool_call_id or name,
                     intent_fingerprint="a" * 64,
                     tool=name,
-                    case_id=CASE,
                     status=status,
                     evidence=(item,),
                     consumption=BudgetConsumption(tool_calls=1, physical_attempts=1, rows=1),
@@ -166,17 +168,17 @@ class Tools:
         return [
             make(
                 "search_evidence",
-                _evidence("chunk-1", "chunk", "Transfer of 9800 EUR to account 77"),
+                _evidence("t_85", "chunk", "Booked transfer of EUR 9,500 on March 3"),
                 OutcomeStatus.SUFFICIENT,
             ),
             make(
                 "query_records",
-                _evidence("row-1", "row", "amount 9800"),
+                _evidence("t_86", "row", "Booked transfer of EUR 9,700 on March 4"),
                 OutcomeStatus.QUERY_SUFFICIENT,
             ),
             make(
                 "find_connections",
-                _evidence("entity:e1", "entity", "person: Mavridis"),
+                _evidence("t_88", "entity", "Booked transfer of EUR 9,800 on March 5"),
                 OutcomeStatus.CONNECTIONS_FOUND,
             ),
         ]
@@ -214,8 +216,11 @@ async def _allow(utterance: str, context: RuntimeContext) -> InputGuardrailVerdi
     return InputGuardrailVerdict(status=InputGuardrailStatus.ALLOWED, reason_code="ok")
 
 
-ANSWER_1 = "Mavridis is linked to the 9800 EUR transfer to account 77 [chunk-1][row-1][entity:e1]."
-ANSWER_2 = "The beneficiary account 77 is the one recorded in the transfer [chunk-1]."
+ANSWER_1 = (
+    "Yes. Aegean made three booked transfers on consecutive business days totaling EUR 29,000 "
+    "[t_85][t_86][t_88]."
+)
+ANSWER_2 = "The first transfer was EUR 9,500 [t_85]."
 
 
 def _responses() -> list[AIMessage]:
@@ -235,8 +240,7 @@ def _responses() -> list[AIMessage]:
                 ),
             ],
         ),
-        AIMessage(content="", tool_calls=[_draft("c4", ANSWER_1, "chunk-1", "row-1", "entity:e1")]),
-        AIMessage(content="", tool_calls=[_draft("c5", ANSWER_2, "chunk-1")]),
+        AIMessage(content="", tool_calls=[_draft("c4", ANSWER_1, "t_85", "t_86", "t_88")]),
     ]
 
 
@@ -285,7 +289,7 @@ async def test_scripted_turns_survive_interruption_and_replay_byte_identically(
 
     async def turn(request_id: str, message: str) -> list[dict[str, Any]]:
         prepared = await invoke.prepare(
-            InvokeRequest(request_id=request_id, thread_id=thread, case_id=CASE, message=message)
+            InvokeRequest(request_id=request_id, thread_id=thread, message=message)
         )
         return [json.loads(e["data"]) async for e in stream_prepared_turn(prepared, chunk_chars=16)]
 
@@ -293,8 +297,7 @@ async def test_scripted_turns_survive_interruption_and_replay_byte_identically(
         InvokeRequest(
             request_id="r1",
             thread_id=thread,
-            case_id=CASE,
-            message="Is Mavridis connected to the 9800 transfer?",
+            message="Did Aegean make three booked consecutive-business-day transfers totaling EUR 29,000?",
         )
     )
     stream = cast(
@@ -315,8 +318,7 @@ async def test_scripted_turns_survive_interruption_and_replay_byte_identically(
         InvokeRequest(
             request_id="r1",
             thread_id=thread,
-            case_id=CASE,
-            message="Is Mavridis connected to the 9800 transfer?",
+            message="Did Aegean make three booked consecutive-business-day transfers totaling EUR 29,000?",
         )
     )
     assert prepared.kind is PreparedTurnKind.RESUME
@@ -326,27 +328,30 @@ async def test_scripted_turns_survive_interruption_and_replay_byte_identically(
     streamed = "".join(e["data"]["text"] for e in resumed if e["event"] == "answer.delta")
     assert streamed == ANSWER_1
     assert {c["evidence_id"] for c in resumed[-1]["data"]["citations"]} == {
-        "chunk-1",
-        "row-1",
-        "entity:e1",
+        "t_85",
+        "t_86",
+        "t_88",
     }
+    calls_after_resume = model.calls
 
-    replay = await turn("r1", "Is Mavridis connected to the 9800 transfer?")
+    replay = await turn(
+        "r1", "Did Aegean make three booked consecutive-business-day transfers totaling EUR 29,000?"
+    )
     assert [e["event"] for e in replay if e["event"] != "answer.delta"] == [
         "run.started",
         "run.completed",
     ]
     assert "".join(e["data"]["text"] for e in replay if e["event"] == "answer.delta") == streamed
-    assert model.calls == 3
+    assert model.calls == calls_after_resume
 
-    second = await turn("r2", "Which account received it?")
+    second = await turn("r2", "What was the first transfer amount?")
     assert second[-1]["event"] == "run.completed"
     assert "".join(e["data"]["text"] for e in second if e["event"] == "answer.delta") == ANSWER_2
     first_second_call = model.seen[-1]
     assert isinstance(first_second_call[0], SystemMessage) and len(first_second_call) == 2
     assert (
-        "Is Mavridis connected" in first_second_call[0].content
-        and "chunk-1" in first_second_call[0].content
+        "Did Aegean make three" in first_second_call[0].content
+        and "t_85" in first_second_call[0].content
     )
 
     pages: list[Any] = []
@@ -365,17 +370,12 @@ async def test_scripted_turns_survive_interruption_and_replay_byte_identically(
     ]
     assert len({m.message_id for m in pages}) == 4
     threads = await history.list_threads(page_size=50)
-    assert any(
-        t.thread_id == thread and t.case_id == CASE and t.status is TurnStatus.COMPLETED
-        for t in threads.items
-    )
+    assert any(t.thread_id == thread and t.status is TurnStatus.COMPLETED for t in threads.items)
 
     await deleter.delete(thread)
     with pytest.raises(ThreadNotFound):
         await history.read_messages(thread_id=thread)
-    fresh = await invoke.prepare(
-        InvokeRequest(request_id="r1", thread_id=thread, case_id="case-b", message="new")
-    )
+    fresh = await invoke.prepare(InvokeRequest(request_id="r1", thread_id=thread, message="new"))
     assert fresh.kind is PreparedTurnKind.NEW and fresh.graph_input is not None
-    assert fresh.graph_input["control"]["case_id"] == "case-b"
+    assert fresh.graph_input["control"]["policy_version"] == "e2e"
     await fresh.close()

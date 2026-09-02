@@ -38,6 +38,7 @@ from investigation_agent.genai.investigation.tools import TOOL_NAMES
 from investigation_agent.genai.shared.retries import RetryPolicy, model_retry_middleware
 from investigation_agent.genai.shared.structured import StructuredResultRunner
 from investigation_agent.genai.state_projection.compactor import ProjectionModel
+from investigation_agent.observability.instrumentation import LogicalModelTelemetryMiddleware
 
 EXPECTED_NODE_NAMES: frozenset[str] = frozenset(
     {
@@ -99,11 +100,31 @@ def build_investigation_agent(
     names = {tool.name for tool in components.tools}
     if names != set(TOOL_NAMES):
         raise ValueError(f"investigation agent requires exactly the tools {TOOL_NAMES}")
+    # ``wrap_model_call`` nests first-to-outermost, so the logical-model telemetry sits outside
+    # the retry layer (one operation ID per retried call) but inside the failure translation.
+    logical_model_telemetry = [
+        item for item in components.telemetry if isinstance(item, LogicalModelTelemetryMiddleware)
+    ]
+    other_telemetry = [
+        item
+        for item in components.telemetry
+        if not isinstance(item, LogicalModelTelemetryMiddleware)
+    ]
     middleware: list[AgentMiddleware[Any, Any, Any]] = [
         TurnIntakeMiddleware(max_history_turns=limits.max_history_turns),
         InputGuardrailMiddleware(components.guardrail),
-        ModelFailureMiddleware(),
+        ModelFailureMiddleware(transient_errors=components.transient_errors),
+        *logical_model_telemetry,
         model_retry_middleware(components.retry_policy, components.transient_errors),
+        ContextMiddleware(
+            instructions=MAIN_SYSTEM_PROMPT, max_context_tokens=limits.max_context_tokens
+        ),
+        EvidenceIndexMiddleware(
+            max_cards=limits.max_evidence_cards, evidence_guard=components.evidence_guard
+        ),
+        GroundingMiddleware(verifier=components.verifier, max_answer_chars=limits.max_answer_chars),
+        # ``after_model`` hooks run in reverse list order: the call limits must count a model
+        # call before grounding can jump back to ``model`` for a repair.
         cast(
             Any,
             ModelCallLimitMiddleware(run_limit=limits.loop_model_calls, exit_behavior="end"),
@@ -112,13 +133,6 @@ def build_investigation_agent(
             Any,
             ToolCallLimitMiddleware(run_limit=limits.main_tool_call_limit, exit_behavior="end"),
         ),
-        ContextMiddleware(
-            instructions=MAIN_SYSTEM_PROMPT, max_context_tokens=limits.max_context_tokens
-        ),
-        EvidenceIndexMiddleware(
-            max_cards=limits.max_evidence_cards, evidence_guard=components.evidence_guard
-        ),
-        GroundingMiddleware(verifier=components.verifier, max_answer_chars=limits.max_answer_chars),
         TurnCloseMiddleware(
             closure=components.closure,
             projection_model=components.projection_model,
@@ -129,7 +143,7 @@ def build_investigation_agent(
             main_model_call_limit=limits.loop_model_calls,
             main_tool_call_limit=limits.main_tool_call_limit,
         ),
-        *components.telemetry,
+        *other_telemetry,
     ]
     return create_agent(
         model=components.model,

@@ -12,7 +12,7 @@ NONSECRET_ENV = {
     "AWS_REGION": "eu-central-1",
     "BEDROCK_CHAT_MODEL_ID": "example.chat-v1:0",
     "BEDROCK_EMBEDDING_MODEL_ID": "example.embedding-v1:0",
-    "EXPECTED_AGENT_INITIALIZER_VERSION": "agent-runtime@1",
+    "EXPECTED_AGENT_INITIALIZER_VERSION": "agent-runtime@2",
 }
 
 ALL_SECRET_NAMES = {

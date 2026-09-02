@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from investigation_agent.config.secrets import (
     InitializerSecrets,
@@ -126,3 +128,44 @@ def test_loader_rejects_unknown_or_misplaced_secret_fields(
 
     assert unexpected_name in str(error.value)
     assert sentinel not in str(error.value)
+
+
+def test_dotenv_with_non_secret_settings_alongside_secrets_loads(
+    isolated_secret_sources: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AWS_REGION=eu-west-1\n"
+        "AGENT_READER_DATABASE_URL=postgresql://agent_reader:reader-secret@db:5432/app\n"
+        "AGENT_WRITER_DATABASE_URL=postgresql://agent_writer:writer-secret@db:5432/app\n"
+    )
+    monkeypatch.setitem(ServingSecrets.model_config, "env_file", dotenv)
+
+    secrets = load_serving_secrets()
+
+    assert secrets.reader_database_url.get_secret_value().startswith("postgresql://agent_reader:")
+
+
+def test_dotenv_with_misplaced_secret_is_still_rejected(
+    isolated_secret_sources: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AGENT_READER_DATABASE_URL=postgresql://agent_reader:reader-secret@db:5432/app\n"
+        "AGENT_WRITER_DATABASE_URL=postgresql://agent_writer:writer-secret@db:5432/app\n"
+        "AGENT_OWNER_DATABASE_URL=postgresql://app:owner-private-value@db:5432/app\n"
+    )
+    monkeypatch.setitem(ServingSecrets.model_config, "env_file", dotenv)
+
+    with pytest.raises(SecretsError) as error:
+        load_serving_secrets()
+
+    assert "AGENT_OWNER_DATABASE_URL" in str(error.value)
+    assert "ENVIRONMENT_NAME" not in str(error.value)
+    assert "owner-private-value" not in str(error.value)

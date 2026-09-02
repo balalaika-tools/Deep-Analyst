@@ -8,7 +8,7 @@ from dataset.core.fixtures import DEVICES, PHONES
 from dataset.core.util import _digits
 
 
-def build_cdr(case_id: str, rng: random.Random) -> list[dict[str, Any]]:
+def build_cdr(rng: random.Random) -> list[dict[str, Any]]:
     def row(
         record_id: str,
         record_type: str,
@@ -23,7 +23,6 @@ def build_cdr(case_id: str, rng: random.Random) -> list[dict[str, Any]]:
     ) -> dict[str, Any]:
         return {
             "record_id": record_id,
-            "case_id": case_id,
             "seq": 0,
             "record_type": record_type,
             "subscriber_msisdn": _digits(PHONES[subscriber]),

@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": "2026-03-09T00:00:00Z",
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -9,11 +8,11 @@
     },
     "original_time_value": "2026-03-09",
     "parser_version": "docs-parser@1",
-    "raw_content_hash": "6f5054f0fd84fe597e9610fa17147174225c94c6b77fc20f0b90e65b4f65dfa5",
+    "raw_content_hash": "d46e0952b45e9fb22585c3613f906fc3d59cf948164b629730032795f83db2f0",
     "raw_object_uri": "raw/docs/R-03.md",
-    "record_id": "case_trg_001:docs:R-03",
+    "record_id": "docs:R-03",
     "record_type": "DOCUMENT",
-    "record_version_id": "case_trg_001:docs:R-03:v1",
+    "record_version_id": "docs:R-03:d46e0952b45e9fb22585c3613f906fc3d59cf948164b629730032795f83db2f0",
     "source_record_id": "R-03",
     "source_system": "docs",
     "source_version_id": "docs@1-el"
@@ -22,7 +21,6 @@
     "body": "> Synthetic test fixture — not real evidence.\n\n# Αναφορά ύποπτης δραστηριότητας\n\nΥποκείμενο: Aegean Trade OE. Καταχωρισμένο τηλέφωνο επικοινωνίας: +30 210 445 5667.\n\nΣτις 3, 4 και 5 Μαρτίου καταγράφηκαν τρεις διαδοχικές εργάσιμες μεταφορές €9,500, €9,700 και €9,800, συνολικά €29,000, προς Ionian Supplies IKE και Meridian Consulting Ltd.\n\nQualified narrative from the reporting team: “about €10K moved to Meridian around March 5”. Η φράση είναι προσεγγιστική και δεν αποτελεί ακριβή αντιστοίχιση συναλλαγής.",
     "document_id": "R-03",
     "front_matter": {
-      "case_id": "case_trg_001",
       "document_date": "2026-03-09",
       "document_id": "R-03",
       "genre": "sar_narrative",

@@ -6,11 +6,10 @@ from dataset.core import state
 from dataset.core.constants import ACCOUNT_COLUMNS, GENERATED_AT, TRANSACTION_COLUMNS
 from dataset.core.fixtures import DEVICES, PHONES
 from dataset.core.state import _tr
-from dataset.core.util import _cdr_lexemes, _ordered_row_hash, _record_hash
+from dataset.core.util import _cdr_lexemes, _global_record_id, _ordered_row_hash, _record_hash
 
 
 def _canonical_envelope(
-    case_id: str,
     source: str,
     source_record_id: str,
     raw_path: str,
@@ -20,10 +19,10 @@ def _canonical_envelope(
     original_time_value: str | None,
     normalized_payload: dict[str, Any],
 ) -> dict[str, Any]:
+    record_id = _global_record_id(source, source_record_id)
     return {
-        "case_id": case_id,
-        "record_id": f"{case_id}:{source}:{source_record_id}",
-        "record_version_id": f"{case_id}:{source}:{source_record_id}:v1",
+        "record_id": record_id,
+        "record_version_id": f"{record_id}:{raw_content_hash}",
         "source_system": source,
         "source_record_id": source_record_id,
         "source_version_id": state.SOURCE_VERSIONS[source],
@@ -39,7 +38,6 @@ def _canonical_envelope(
 
 
 def build_previews(
-    case_id: str,
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
     emails: list[dict[str, Any]],
@@ -64,7 +62,6 @@ def build_previews(
         "cdr": {
             "raw": c01,
             "canonical": _canonical_envelope(
-                case_id,
                 "cdr",
                 "c01",
                 "raw/cdr.csv",
@@ -83,7 +80,6 @@ def build_previews(
         "extraction": {
             "raw": x204,
             "canonical": _canonical_envelope(
-                case_id,
                 "extraction",
                 "X-204",
                 "raw/extraction.jsonl",
@@ -102,7 +98,6 @@ def build_previews(
         "email": {
             "raw": email_raw,
             "canonical": _canonical_envelope(
-                case_id,
                 "email",
                 "eM1",
                 "raw/emails/eM1.eml",
@@ -120,7 +115,6 @@ def build_previews(
         "account": {
             "raw": account,
             "canonical": _canonical_envelope(
-                case_id,
                 "bank",
                 "acct_aegean",
                 "raw/bank.sql",
@@ -138,7 +132,6 @@ def build_previews(
         "transaction": {
             "raw": txn,
             "canonical": _canonical_envelope(
-                case_id,
                 "bank",
                 "t_88",
                 "raw/bank.sql",
@@ -158,7 +151,6 @@ def build_previews(
         "document": {
             "raw": document_raw,
             "canonical": _canonical_envelope(
-                case_id,
                 "docs",
                 "R-03",
                 "raw/docs/R-03.md",

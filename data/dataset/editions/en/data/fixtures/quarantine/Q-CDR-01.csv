@@ -1,2 +1,2 @@
-record_id,case_id,seq,record_type,subscriber_msisdn,calling_msisdn,called_msisdn,imei,cell_id,ts_local,duration_s,sms_len,source_version
-Q-CDR-01,case_trg_001,99901,MOC,306930000101,306930000101,306930000102,350000000000014,AT-TEST-0001,2026-03-04T25:61:00+XX:YY,30,,cdr@1-en
+record_id,seq,record_type,subscriber_msisdn,calling_msisdn,called_msisdn,imei,cell_id,ts_local,duration_s,sms_len,source_version
+Q-CDR-01,99901,MOC,306930000101,306930000101,306930000102,350000000000014,AT-TEST-0001,2026-03-04T25:61:00+XX:YY,30,,cdr@1-en

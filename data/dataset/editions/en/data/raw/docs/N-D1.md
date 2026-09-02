@@ -1,6 +1,5 @@
 ---
 document_id: N-D1
-case_id: case_trg_001
 document_date: 2026-02-27
 genre: routine_port_memo
 source_reliability: medium

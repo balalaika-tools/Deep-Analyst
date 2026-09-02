@@ -45,6 +45,11 @@ def test_database_url() -> str:
 async def engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(test_database_url, pool_size=2, max_overflow=1)
     async with engine.begin() as conn:
+        # Agent integration tests create views over the ingestion tables. Remove
+        # those test-only schemas first so this fixture remains repeatable when
+        # both suites share the same disposable database.
+        await conn.execute(text("DROP SCHEMA IF EXISTS agent_read CASCADE"))
+        await conn.execute(text("DROP SCHEMA IF EXISTS agent_runtime CASCADE"))
         await conn.execute(text("DROP SCHEMA IF EXISTS bank_raw CASCADE"))
         await conn.run_sync(SQLModel.metadata.drop_all)
         await bootstrap_store(conn, embedding_dimensions=TEST_DIMENSIONS)

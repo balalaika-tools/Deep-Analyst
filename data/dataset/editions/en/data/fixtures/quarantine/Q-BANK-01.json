@@ -1,7 +1,6 @@
 {
   "account_id": "Q-BANK-01",
   "bic": "TRGSGR2A",
-  "case_id": "case_trg_001",
   "holder_name": "Invalid Fixture",
   "holder_type": "person",
   "iban": "GR0000000000000000000000000",

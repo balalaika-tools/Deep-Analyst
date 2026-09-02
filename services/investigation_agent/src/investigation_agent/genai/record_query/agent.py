@@ -59,7 +59,6 @@ class QueryTransientError(ConnectionError):
 class QueryInvocation:
     """Invocation-local, trusted state the nested model can neither read nor write."""
 
-    case_id: str
     deadline: float
     cancellation: CancellationToken
     limits: ExecutorLimits
@@ -179,7 +178,6 @@ class QueryRecordsAgent:
             invocation.physical_attempts += 1
             result = await execute_guarded_select(
                 pool=pool,
-                case_id=invocation.case_id,
                 plan=plan,
                 deadline=invocation.deadline,
                 limits=invocation.limits,
@@ -195,13 +193,11 @@ class QueryRecordsAgent:
         intent: QueryIntent,
         *,
         call_id: str,
-        case_id: str,
         deadline: float,
         cancellation: CancellationToken,
         progress: ProgressWriter | None = None,
     ) -> QueryOutcome:
         invocation = QueryInvocation(
-            case_id=case_id,
             deadline=deadline,
             cancellation=cancellation,
             limits=self._executor_limits,

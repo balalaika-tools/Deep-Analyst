@@ -6,7 +6,6 @@ import { initialTurnState, turnReducer } from "./turn-state";
 const payload: InvokeRequest = {
   request_id: "request-1",
   thread_id: "thread-1",
-  case_id: "case-1",
   message: "Question",
 };
 const base = {

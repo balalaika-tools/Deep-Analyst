@@ -5,9 +5,9 @@ const timestamp = "2026-09-02T12:00:00Z";
 const encoder = new TextEncoder();
 
 const baseThreads = [
-  { thread_id: "thread-1", case_id: "case-1", turn_id: "turn-1", status: "completed", created_at: timestamp },
-  { thread_id: "thread-fail", case_id: "case-1", turn_id: "turn-fail", status: "failed", created_at: "2026-09-01T12:00:00Z" },
-  { thread_id: "thread-2", case_id: "case-2", turn_id: "turn-2", status: "completed", created_at: "2026-08-31T12:00:00Z" },
+  { thread_id: "thread-1", turn_id: "turn-1", status: "completed", created_at: timestamp },
+  { thread_id: "thread-fail", turn_id: "turn-fail", status: "failed", created_at: "2026-09-01T12:00:00Z" },
+  { thread_id: "thread-2", turn_id: "turn-2", status: "completed", created_at: "2026-08-31T12:00:00Z" },
 ];
 
 const baseMessages = {
@@ -19,7 +19,7 @@ const baseMessages = {
     { message_id: "message-fail", sequence: 1, turn_id: "turn-fail", request_id: "request-fail", role: "user", content: "Earlier failed investigation", citations: [], turn_status: "failed", created_at: timestamp },
   ],
   "thread-2": [
-    { message_id: "message-3", sequence: 1, turn_id: "turn-2", request_id: "request-2", role: "user", content: "Review the second case", citations: [], turn_status: "completed", created_at: timestamp },
+    { message_id: "message-3", sequence: 1, turn_id: "turn-2", request_id: "request-2", role: "user", content: "Review the second corpus segment", citations: [], turn_status: "completed", created_at: timestamp },
   ],
 };
 
@@ -85,7 +85,7 @@ function addCompletedTurn(body, turnId, answer) {
     { message_id: `${body.request_id}-assistant`, sequence: sequence + 1, turn_id: turnId, request_id: body.request_id, role: "assistant", content: answer, citations: [], turn_status: "completed", created_at: timestamp },
   ];
   const found = threads.find((thread) => thread.thread_id === body.thread_id);
-  if (!found) threads.unshift({ thread_id: body.thread_id, case_id: body.case_id, turn_id: turnId, status: "completed", created_at: timestamp });
+  if (!found) threads.unshift({ thread_id: body.thread_id, turn_id: turnId, status: "completed", created_at: timestamp });
 }
 
 const server = http.createServer(async (request, response) => {

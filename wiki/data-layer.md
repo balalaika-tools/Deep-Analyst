@@ -28,7 +28,7 @@ read source
   --> store proposed semantic relationships
 ```
 
-This runs once per case as a one-shot, idempotent pipeline: a run that matches a prior completed
+This runs once per edition as a one-shot, idempotent pipeline: a run that matches a prior completed
 run's fingerprint (dataset contents, embedding model, chunking configuration) is skipped without
 touching the database; anything else is a full, safe-to-repeat rebuild, because every write
 upserts on a stable natural key.
@@ -55,7 +55,7 @@ flowchart LR
     class R,E,L truth;
 ```
 
-A **record** is one source item in a common shape: case, source system, type, UTC and original
+A **record** is one source item in a common shape: global record identity, source system, type, UTC and original
 timestamp, searchable text (if any), and the source-specific structured payload. For example,
 transaction `t_88` stores its debtor and creditor accounts, `amount_minor = 980000`, currency,
 booking time, and the reference `INV-2231` in its payload.
@@ -155,7 +155,6 @@ erDiagram
 
     records {
         string record_id PK
-        string case_id
         string source_system
         datetime event_time_utc
         text text
@@ -163,7 +162,6 @@ erDiagram
     }
     entities {
         string entity_id PK
-        string case_id
         string entity_type
         string normalized_key
         json source_refs

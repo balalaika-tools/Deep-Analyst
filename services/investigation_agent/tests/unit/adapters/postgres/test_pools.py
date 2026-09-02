@@ -1,4 +1,8 @@
+import asyncio
+
+import pytest
 from investigation_agent.adapters.postgres.pools import (
+    DatabasePools,
     PoolBounds,
     create_reader_pool,
     create_writer_pool,
@@ -41,3 +45,34 @@ def test_reader_and_writer_pools_have_distinct_bounded_settings() -> None:
         "options": "-c search_path=agent_runtime,pg_catalog",
     }
     assert reader.closed and writer.closed
+
+
+class _FakePool:
+    def __init__(self, *, fail: Exception | None = None) -> None:
+        self.fail = fail
+        self.cancelled = False
+        self.finished = False
+
+    async def open(self, *, wait: bool) -> None:
+        del wait
+        if self.fail is not None:
+            raise self.fail
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        finally:
+            self.finished = True
+
+
+@pytest.mark.asyncio
+async def test_open_cancels_sibling_and_reraises_first_failure() -> None:
+    reader = _FakePool(fail=RuntimeError("reader refused"))
+    writer = _FakePool()
+    pools = DatabasePools(reader=reader, writer=writer)  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="reader refused"):
+        await pools.open()
+
+    assert writer.cancelled and writer.finished

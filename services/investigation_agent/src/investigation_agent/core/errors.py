@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from enum import StrEnum
 
+import psycopg
+
 
 class FailureKind(StrEnum):
     VALIDATION = "validation"
@@ -144,11 +146,14 @@ _TRANSLATIONS: tuple[tuple[type[BaseException], type[InvestigationFailure]], ...
     (asyncio.CancelledError, CancelledFailure),
     (AdapterDependencyUnavailableError, DependencyUnavailableFailure),
     (AdapterIncompatibleStateError, IncompatibleStateFailure),
+    # Connection-level psycopg errors (psycopg_pool's PoolTimeout/PoolClosed subclass
+    # OperationalError) mean the database is unreachable or overloaded, which is retryable.
+    (psycopg.OperationalError, DependencyUnavailableFailure),
+    (psycopg.InterfaceError, DependencyUnavailableFailure),
 )
 
 _CODE_TRANSLATIONS: dict[str, type[InvestigationFailure]] = {
     "thread_full": ConflictFailure,
-    "thread_case_conflict": ConflictFailure,
     "grounding_failed": NoSupportFailure,
     "guardrail_unavailable": DependencyUnavailableFailure,
     "request_in_progress": ConflictFailure,

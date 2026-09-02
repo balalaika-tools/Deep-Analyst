@@ -58,7 +58,7 @@ from investigation_agent.genai.investigation.tools import (
 from investigation_agent.genai.record_query.agent import QueryAgentPolicy, QueryRecordsAgent
 from investigation_agent.genai.record_query.executor import ExecutorLimits
 from investigation_agent.genai.shared.llm import ModelClients, build_model_clients
-from investigation_agent.genai.shared.retries import RetryPolicy
+from investigation_agent.genai.shared.retries import BOTOCORE_TRANSIENT_ERRORS, RetryPolicy
 from investigation_agent.genai.shared.structured import StructuredRunner
 from investigation_agent.genai.state_projection.llm import ProjectionModelRunner
 from investigation_agent.observability.events import InvestigationInstruments
@@ -74,8 +74,13 @@ SERVICE_NAMESPACE = "deep-analyst"
 POLICY_VERSION = "investigation-policy@2"
 
 # Provider and transport failures that are safe to retry physically; validation and policy
-# outcomes are never in this tuple.
-TRANSIENT_ERRORS: tuple[type[Exception], ...] = (TimeoutError, ConnectionError)
+# outcomes are never in this tuple. Retryable Bedrock ``ClientError`` codes are recognised by
+# ``is_transient_error`` wherever this tuple is consumed.
+TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
+    TimeoutError,
+    ConnectionError,
+    *BOTOCORE_TRANSIENT_ERRORS,
+)
 
 
 class Telemetry(Protocol):

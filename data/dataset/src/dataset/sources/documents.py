@@ -6,7 +6,7 @@ from dataset.core import state
 from dataset.core.state import _tr
 
 
-def build_documents(case_id: str) -> list[dict[str, Any]]:
+def build_documents() -> list[dict[str, Any]]:
     notice = "> Synthetic test fixture — not real evidence.\n\n"
     specs = [
         (
@@ -223,7 +223,6 @@ Reference INV-2237 concerns an equipment purchase from Logistiki Attikis. The re
     for document_id, document_date, genre, reliability, body in specs:
         front_matter = {
             "document_id": document_id,
-            "case_id": case_id,
             "document_date": document_date,
             "genre": genre,
             "source_reliability": reliability,
@@ -233,7 +232,6 @@ Reference INV-2237 concerns an equipment purchase from Logistiki Attikis. The re
         yaml_lines = ["---"]
         for key in [
             "document_id",
-            "case_id",
             "document_date",
             "genre",
             "source_reliability",

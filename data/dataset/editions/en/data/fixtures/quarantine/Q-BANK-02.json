@@ -1,7 +1,6 @@
 {
   "amount_text": "10.001",
   "booking_ts_utc": "2026-03-04T10:00:00Z",
-  "case_id": "case_trg_001",
   "creditor_bic": "TRGSGR2A",
   "creditor_iban": "GR3601100010000000000054401",
   "creditor_name": "Fixture Creditor",

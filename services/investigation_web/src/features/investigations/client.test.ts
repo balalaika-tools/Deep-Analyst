@@ -5,7 +5,6 @@ import { invokeInvestigation, InvocationProblem, InvocationTransportError } from
 const request = {
   request_id: "request-1",
   thread_id: "thread-1",
-  case_id: "case-1",
   message: "Investigate",
 };
 

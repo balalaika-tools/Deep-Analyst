@@ -41,3 +41,24 @@ def test_llm_factories_receive_validated_role_specific_configuration() -> None:
     assert clients.planner is not clients.guardrail
     assert calls[0][2]["region_name"] == "eu-west-1"
     assert calls[1][2]["temperature"] == 0
+
+
+def test_terra_clients_omit_unsupported_generation_options() -> None:
+    calls: list[dict[str, Any]] = []
+    settings = _settings().model_copy(
+        update={"bedrock_chat_model_id": "global.openai.gpt-5.6-terra"}
+    )
+
+    def chat(_model_id: str, **options: Any) -> object:
+        calls.append(options)
+        return object()
+
+    build_model_clients(
+        settings,
+        chat_factory=chat,  # type: ignore[arg-type]
+        embedding_factory=lambda *_args, **_kwargs: object(),  # type: ignore[arg-type]
+    )
+
+    assert calls
+    assert all("temperature" not in options for options in calls)
+    assert all("reasoning_effort" not in options for options in calls)

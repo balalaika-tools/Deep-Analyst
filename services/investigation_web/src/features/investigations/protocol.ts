@@ -17,7 +17,7 @@ export type TerminalEvent = RunCompletedEvent | RunFailedEvent;
 
 export interface ProtocolExpectation {
   threadId: string;
-  onEvent: (event: InvestigationEvent) => void;
+  onEvent: (event: InvestigationEvent) => void | Promise<void>;
 }
 
 function parseFrame(eventName: string, data: string): InvestigationEvent {
@@ -65,7 +65,7 @@ export async function consumeInvestigationStream(
       }
       nextDeltaIndex += 1;
     }
-    expectation.onEvent(event);
+    await expectation.onEvent(event);
     if (event.event === "run.completed" || event.event === "run.failed") terminal = event;
   }
 

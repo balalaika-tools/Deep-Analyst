@@ -99,7 +99,6 @@ def _candidate(
     return RetrievalCandidate(
         chunk_id=chunk_id,
         record_id=f"record-{chunk_id}",
-        case_id="case-1",
         text=text,
         content_hash="a" * 64,
         source_ref=SourceRef(record_id=f"record-{chunk_id}", locator=FieldLocator(field="text")),
@@ -121,7 +120,6 @@ class FakeReader:
     async def search_lexical(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         excluded_chunk_ids: frozenset[str],
         deadline: float,
@@ -137,7 +135,6 @@ class FakeReader:
     async def search_vector(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         embedding: Sequence[float],
         excluded_chunk_ids: frozenset[str],
@@ -199,7 +196,6 @@ async def _run(
     return await agent.run(
         _intent(),
         call_id="call-1",
-        case_id="case-1",
         deadline=asyncio.get_running_loop().time() + 5,
         cancellation=CancellationToken.create(),
         seen_chunk_ids=seen,

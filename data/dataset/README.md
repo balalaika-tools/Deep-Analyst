@@ -67,7 +67,7 @@ hashes, and source spans remain consistent.
 
 ## Runtime boundary
 
-Only files under `raw/` are case evidence. Runtime ingestion must exclude:
+Only files under `raw/` are runtime evidence. Runtime ingestion must exclude:
 
 - `ground_truth.json`;
 - `expected/`;
@@ -79,7 +79,7 @@ leak the answer key into the assistant.
 ## Important conventions
 
 - Canonical seed: `20260305`.
-- Case: `case_trg_001`.
+- Dataset identity is derived from the edition and canonical seed; no evidence partition field is emitted.
 - Activity window: 20 February through 10 March 2026.
 - Raw CDR and email timestamps retain their original offset; comparisons use UTC.
 - Exact decimal money is preserved and normalized to integer minor units.

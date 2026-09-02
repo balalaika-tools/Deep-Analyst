@@ -8,11 +8,9 @@ from ingestion.adapters.fixtures.documents import (
     split_front_matter,
 )
 
-CASE = "case_trg_001"
-
 
 def test_documents_yield_10_records_and_body_excludes_front_matter(edition_dir: Path) -> None:
-    batch = load_documents(edition_dir, CASE)
+    batch = load_documents(edition_dir)
 
     assert len(batch.records) == 10 and not batch.communications
     r01 = next(record for record in batch.records if record.source_record_id == "R-01")

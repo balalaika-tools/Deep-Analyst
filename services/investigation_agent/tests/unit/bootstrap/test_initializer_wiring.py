@@ -17,10 +17,9 @@ def _settings(tmp_path: Path) -> Settings:
         AWS_REGION="eu-west-1",
         BEDROCK_CHAT_MODEL_ID="chat-model",
         BEDROCK_EMBEDDING_MODEL_ID="embedding-model",
-        EXPECTED_AGENT_INITIALIZER_VERSION="agent-runtime@1",
+        EXPECTED_AGENT_INITIALIZER_VERSION="agent-runtime@2",
         AUTHORIZATION_ADAPTER="development",
         DEVELOPMENT_OWNER_ID="owner",
-        DEVELOPMENT_ALLOWED_CASE_IDS=("case-a",),
         _env_file=None,
         _yaml_file=tmp_path / "missing.yaml",
     )
@@ -50,5 +49,5 @@ def test_initializer_bootstrap_passes_only_validated_owner_secrets(
         "owner_dsn": "postgresql://owner:password@db/app",
         "reader_password": "reader-password-123",
         "writer_password": "writer-password-123",
-        "expected_version": "agent-runtime@1",
+        "expected_version": "agent-runtime@2",
     }

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from dataset.core.constants import CANONICAL_SEED, CASE_ID, CDR_COLUMNS
+from dataset.core.constants import CANONICAL_SEED, CDR_COLUMNS
 
 
 def _require(condition: bool, message: str) -> None:
@@ -43,6 +43,12 @@ def _record_hash(record: dict[str, Any]) -> str:
     return _sha256(_json_bytes(record))
 
 
+def _global_record_id(source_system: str, source_record_id: str) -> str:
+    """Qualify a stable source-local identifier for global use."""
+    _require(bool(source_system and source_record_id), "record identity parts must be non-empty")
+    return f"{source_system}:{source_record_id}"
+
+
 def _cdr_lexemes(record: dict[str, Any]) -> dict[str, str]:
     """Return the exact string values produced and parsed by the CDR CSV."""
     return {column: "" if record[column] is None else str(record[column]) for column in CDR_COLUMNS}
@@ -69,10 +75,8 @@ def _write_json(path: Path, value: Any) -> None:
     _write_bytes(path, _json_bytes(value, pretty=True))
 
 
-def _case_namespace(seed: int) -> tuple[str, str | None]:
-    if seed == CANONICAL_SEED:
-        return CASE_ID, None
-    return f"case_trg_variant_{seed}", str(seed)
+def _variant_id(seed: int) -> str | None:
+    return None if seed == CANONICAL_SEED else str(seed)
 
 
 def _digits(phone: str) -> str:

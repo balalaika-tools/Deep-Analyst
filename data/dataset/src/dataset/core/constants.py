@@ -1,7 +1,6 @@
 """Static constants shared across the TRG synthetic dataset generator."""
 
 CANONICAL_SEED = 20260305
-CASE_ID = "case_trg_001"
 DEFAULT_LOCALE = "en"
 SUPPORTED_LOCALES = ("en", "el")
 
@@ -18,7 +17,6 @@ GENERATED_AT = "2026-03-11T00:00:00Z"
 
 CDR_COLUMNS = [
     "record_id",
-    "case_id",
     "seq",
     "record_type",
     "subscriber_msisdn",
@@ -35,7 +33,6 @@ CDR_COLUMNS = [
 
 EXTRACTION_COLUMNS = [
     "msg_id",
-    "case_id",
     "imei",
     "subscriber_msisdn",
     "direction",
@@ -48,7 +45,6 @@ EXTRACTION_COLUMNS = [
 
 
 ACCOUNT_COLUMNS = [
-    "case_id",
     "account_id",
     "iban",
     "holder_name",
@@ -60,7 +56,6 @@ ACCOUNT_COLUMNS = [
 
 
 TRANSACTION_COLUMNS = [
-    "case_id",
     "txn_id",
     "booking_ts_utc",
     "value_date",

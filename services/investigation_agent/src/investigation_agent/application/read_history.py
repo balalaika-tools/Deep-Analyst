@@ -98,7 +98,6 @@ class ThreadSummary(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     thread_id: str
-    case_id: str
     turn_id: str
     status: TurnStatus
     created_at: datetime
@@ -230,7 +229,7 @@ class ReadHistory:
         return MessagePage(items=items, next_cursor=next_cursor)
 
     async def _load_state(self, thread_id: str) -> InvestigationState:
-        config = graph_config(thread_id=thread_id, case_id="-")
+        config = graph_config(thread_id=thread_id)
         try:
             snapshot: GraphSnapshot = await self._graph.aget_state(config)
             state = parse_state(snapshot.values)
@@ -254,7 +253,6 @@ class ReadHistory:
         )
         return ThreadSummary(
             thread_id=thread_id,
-            case_id=state.control.case_id,
             turn_id=turn.turn_id,
             status=status,
             created_at=created_at,

@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 from evidence_model import Predicate, RelationshipStatus
-from ingestion.application.ingest_case import IngestionPlan, ingest_case
+from ingestion.application.ingest_dataset import IngestionPlan, ingest_dataset
 from ingestion.observability.events import Outcome
 
 
@@ -13,7 +13,7 @@ async def test_first_run_loads_sources_indexes_chunks_extracts_and_writes_the_re
     deps = deps_factory()
     _, exporter, _, _ = telemetry
 
-    outcome = await ingest_case(plan, deps)
+    outcome = await ingest_dataset(plan, deps)
 
     store = deps.store
     assert outcome.outcome == Outcome.SUCCESS
@@ -64,10 +64,10 @@ async def test_matching_receipt_and_completed_ledger_row_skip_all_work(
     plan: IngestionPlan, deps_factory: Any
 ) -> None:
     deps = deps_factory()
-    await ingest_case(plan, deps)
+    await ingest_dataset(plan, deps)
     second = deps_factory(store=deps.store, receipts=deps.receipts)
 
-    outcome = await ingest_case(plan, second)
+    outcome = await ingest_dataset(plan, second)
 
     assert outcome.outcome == Outcome.SKIPPED
     assert second.sources.loaded == [] and second.embedder.calls == 0
@@ -80,10 +80,10 @@ async def test_receipt_without_a_completed_ledger_row_re_runs(
     plan: IngestionPlan, deps_factory: Any
 ) -> None:
     deps = deps_factory()
-    await ingest_case(plan, deps)
+    await ingest_dataset(plan, deps)
     fresh_store = deps_factory(receipts=deps.receipts)
 
-    outcome = await ingest_case(plan, fresh_store)
+    outcome = await ingest_dataset(plan, fresh_store)
 
     assert outcome.outcome == Outcome.SUCCESS
     assert fresh_store.sources.loaded == ["cdr", "docs"]
@@ -96,7 +96,7 @@ async def test_failure_leaves_a_failed_ledger_row_and_no_receipt(
     deps = deps_factory(extractors=type(deps_factory().entity_extractor)(fail_on="R-03"))
 
     with pytest.raises(ExceptionGroup):
-        await ingest_case(plan, deps)
+        await ingest_dataset(plan, deps)
 
     assert deps.receipts.read("en") is None
     assert deps.store.runs["run-1"]["outcome"] == "failed"
@@ -110,11 +110,11 @@ async def test_stored_graph_is_identical_regardless_of_task_completion_order(
 ) -> None:
     extractor_type = type(deps_factory().entity_extractor)
     baseline = deps_factory(extractors=extractor_type(jitter=False))
-    await ingest_case(plan, baseline)
+    await ingest_dataset(plan, baseline)
 
     for _ in range(3):
         jittered = deps_factory(extractors=extractor_type(jitter=True))
-        await ingest_case(plan, jittered)
+        await ingest_dataset(plan, jittered)
         assert [e.entity_id for e in jittered.store.entities] == [
             e.entity_id for e in baseline.store.entities
         ]

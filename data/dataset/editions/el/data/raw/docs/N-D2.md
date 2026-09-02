@@ -1,6 +1,5 @@
 ---
 document_id: N-D2
-case_id: case_trg_001
 document_date: 2026-03-01
 genre: unrelated_surveillance_note
 source_reliability: medium

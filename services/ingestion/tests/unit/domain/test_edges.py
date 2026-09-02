@@ -20,8 +20,6 @@ from ingestion.domain.records import (
     TransactionProjection,
 )
 
-CASE = "case_trg_001"
-
 
 def _confirmed(relationships: list[RelationshipDraft]) -> None:
     for relationship in relationships:
@@ -33,7 +31,6 @@ def _confirmed(relationships: list[RelationshipDraft]) -> None:
 def test_cdr_row_yields_phone_entities_a_device_and_communicated_with() -> None:
     comm = CommunicationProjection(
         record_id="cdr:c01",
-        case_id=CASE,
         channel="sms",
         direction="out",
         from_endpoint="306971234567",
@@ -65,7 +62,6 @@ def test_cdr_row_yields_phone_entities_a_device_and_communicated_with() -> None:
 def test_email_yields_email_address_endpoints() -> None:
     comm = CommunicationProjection(
         record_id="email:eM1",
-        case_id=CASE,
         channel="email",
         direction="out",
         from_endpoint="alex@meridian-consulting.example",
@@ -83,7 +79,6 @@ def test_email_yields_email_address_endpoints() -> None:
 def test_account_row_yields_held_by_with_a_record_scoped_holder() -> None:
     account = AccountProjection(
         record_id="bank:acct_pa",
-        case_id=CASE,
         account_id="acct_pa",
         iban="GR8001100010000000000017719",
         holder_name="Alexandros Mavridis",
@@ -108,7 +103,6 @@ def test_account_row_yields_held_by_with_a_record_scoped_holder() -> None:
 def test_transaction_row_yields_transferred_to_and_references() -> None:
     txn = TransactionProjection(
         record_id="bank:t_88",
-        case_id=CASE,
         txn_id="t_88",
         booking_ts_utc=datetime(2026, 3, 5, 14, 30, tzinfo=UTC),
         value_date=date(2026, 3, 5),
@@ -144,7 +138,7 @@ def test_transaction_row_yields_transferred_to_and_references() -> None:
 
 def test_identifier_entities_carry_text_span_evidence() -> None:
     text = "He uses telephone +30 697 123 4567."
-    (entity,) = identifier_entities(CASE, "docs:R-01", find_identifiers(text))
+    (entity,) = identifier_entities("docs:R-01", find_identifiers(text))
     assert entity.entity_id == "PHONE:306971234567"
     locator = entity.source_refs[0].locator
     assert locator.kind == "text_span" and locator.matches(text)

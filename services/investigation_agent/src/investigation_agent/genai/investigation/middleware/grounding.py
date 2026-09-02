@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, hook_config
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 from pydantic import ValidationError
@@ -26,7 +27,10 @@ from investigation_agent.genai.investigation.middleware.contracts import require
 from investigation_agent.genai.investigation.middleware.evidence import (
     coverage_incomplete_from_messages,
 )
-from investigation_agent.genai.investigation.middleware.model_failures import SAFE_FAILURE_KEY
+from investigation_agent.genai.investigation.middleware.model_failures import (
+    INVALID_DRAFT_KEY,
+    SAFE_FAILURE_KEY,
+)
 from investigation_agent.genai.investigation.prompts import (
     ANSWER_REPAIR_INSTRUCTION,
     STRUCTURED_ANSWER_INSTRUCTION,
@@ -76,6 +80,10 @@ class GroundingMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
             return _fail(turn, failure, ("model_unavailable",))
         structured = state.get("structured_response")
         domain_calls = [call for call in last_ai.tool_calls if call["name"] != AnswerDraft.__name__]
+        if last_ai.response_metadata.get(INVALID_DRAFT_KEY):
+            return self._reject(
+                turn, ("invalid_answer_draft",), domain_calls=domain_calls, instruction=None
+            )
         if structured is None:
             if domain_calls:
                 return None
@@ -136,6 +144,9 @@ class GroundingMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
                 violations.extend(exc.violations)
             except (TransientExhaustedError, OperationCancelledError):
                 return _fail(turn, "transient_exhausted", ("verifier_unavailable",))
+            except (ValidationError, OutputParserException):
+                # A verdict the verifier could not shape is as unusable as a mismatched one.
+                violations.append("malformed_verifier_output")
             else:
                 accepted = turn.model_copy(
                     update={

@@ -24,7 +24,6 @@ class CandidateReader(Protocol):
     async def search_lexical(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         excluded_chunk_ids: frozenset[str],
         deadline: float,
@@ -33,7 +32,6 @@ class CandidateReader(Protocol):
     async def search_vector(
         self,
         *,
-        case_id: str,
         query: RetrievalQuery,
         embedding: Sequence[float],
         excluded_chunk_ids: frozenset[str],
@@ -77,7 +75,6 @@ async def retrieve_hybrid(
     *,
     reader: CandidateReader,
     embedder: TextEmbedder,
-    case_id: str,
     query: RetrievalQuery,
     excluded_chunk_ids: frozenset[str],
     deadline: float,
@@ -87,7 +84,6 @@ async def retrieve_hybrid(
 
     lexical_task = asyncio.create_task(
         reader.search_lexical(
-            case_id=case_id,
             query=query,
             excluded_chunk_ids=excluded_chunk_ids,
             deadline=deadline,
@@ -97,7 +93,6 @@ async def retrieve_hybrid(
         _embed_then_search(
             reader=reader,
             embedder=embedder,
-            case_id=case_id,
             query=query,
             excluded_chunk_ids=excluded_chunk_ids,
             deadline=deadline,
@@ -112,13 +107,11 @@ async def retrieve_hybrid(
     lexical, lexical_status, lexical_warning = _unwrap_modality(
         lexical_result,
         modality=RetrievalModality.BM25,
-        case_id=case_id,
         exclusions=excluded_chunk_ids,
     )
     vector, vector_status, vector_warning = _unwrap_modality(
         vector_result,
         modality=RetrievalModality.VECTOR,
-        case_id=case_id,
         exclusions=excluded_chunk_ids,
     )
     warnings = tuple(item for item in (lexical_warning, vector_warning) if item)
@@ -142,14 +135,12 @@ async def _embed_then_search(
     *,
     reader: CandidateReader,
     embedder: TextEmbedder,
-    case_id: str,
     query: RetrievalQuery,
     excluded_chunk_ids: frozenset[str],
     deadline: float,
 ) -> Sequence[RetrievalCandidate]:
     embedding = await embedder.embed(query.query, deadline=deadline)
     return await reader.search_vector(
-        case_id=case_id,
         query=query,
         embedding=embedding,
         excluded_chunk_ids=excluded_chunk_ids,
@@ -161,7 +152,6 @@ def _unwrap_modality(
     result: Sequence[RetrievalCandidate] | BaseException,
     *,
     modality: RetrievalModality,
-    case_id: str,
     exclusions: frozenset[str],
 ) -> tuple[tuple[RetrievalCandidate, ...], str, str | None]:
     if isinstance(result, asyncio.CancelledError):
@@ -170,8 +160,6 @@ def _unwrap_modality(
         return (), "failed", f"{modality.value}_unavailable"
     candidates = tuple(result)
     for candidate in candidates:
-        if candidate.case_id != case_id:
-            raise CandidateIntegrityError("retrieval candidate escaped the trusted case scope")
         if candidate.modality is not modality:
             raise CandidateIntegrityError("retrieval candidate has the wrong modality")
         if candidate.chunk_id in exclusions:
@@ -220,7 +208,6 @@ def fuse_candidates(
         FusedCandidate(
             chunk_id=candidate.chunk_id,
             record_id=candidate.record_id,
-            case_id=candidate.case_id,
             text=candidate.text,
             content_hash=candidate.content_hash,
             source_refs=(candidate.source_ref,),
@@ -255,13 +242,11 @@ def _normalize_ranking(
 def _assert_same_evidence(left: RetrievalCandidate, right: RetrievalCandidate) -> None:
     if (
         left.record_id,
-        left.case_id,
         left.text,
         left.content_hash,
         left.source_ref,
     ) != (
         right.record_id,
-        right.case_id,
         right.text,
         right.content_hash,
         right.source_ref,

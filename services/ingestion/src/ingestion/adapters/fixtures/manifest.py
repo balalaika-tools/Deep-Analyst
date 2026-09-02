@@ -16,7 +16,6 @@ class ManifestError(ValueError):
 class Manifest:
     path: Path
     raw_bytes: bytes
-    case_id: str
     dataset_version: str
     language: str
     source_totals: dict[str, int]
@@ -33,7 +32,6 @@ def parse_manifest(raw: bytes, *, path: Path) -> Manifest:
         return Manifest(
             path=path,
             raw_bytes=raw,
-            case_id=str(data["case_id"]),
             dataset_version=str(data["dataset_version"]),
             language=str(data["language"]),
             source_totals={k: int(v) for k, v in data["source_totals"].items()},

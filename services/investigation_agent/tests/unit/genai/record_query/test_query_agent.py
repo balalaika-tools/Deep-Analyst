@@ -22,17 +22,15 @@ from langgraph.errors import NodeCancelledError
 POLICY = RetryPolicy(
     max_attempts=2, initial_delay_s=0, backoff_factor=1, max_delay_s=0, jitter=False
 )
-SAFE_SQL = "SELECT record_id, case_id, content_hash, source_refs, amount_minor FROM agent_read.transactions_v1 WHERE amount_minor >= $1"
+SAFE_SQL = "SELECT record_id, content_hash, source_refs, amount_minor FROM agent_read.transactions_v1 WHERE amount_minor >= $1"
 ROW = {
     "record_id": "bank:t-1",
-    "case_id": "case-a",
     "content_hash": "c" * 64,
     "source_refs": [{"record_id": "bank:t-1", "locator": {"kind": "field", "field": "payload"}}],
     "amount_minor": 500,
 }
 RECORD = {
     "record_id": "bank:t-1",
-    "case_id": "case-a",
     "content_hash": "c" * 64,
     "text": None,
     "payload": {"amount_minor": 500},
@@ -213,7 +211,6 @@ async def _run(
     return await agent.run(
         _intent(),
         call_id="call-1",
-        case_id="case-a",
         deadline=asyncio.get_running_loop().time() + 5,
         cancellation=cancellation or CancellationToken.create(),
         progress=None if progress is None else progress.append,
@@ -246,7 +243,6 @@ async def test_verdict_selects_only_returned_rows() -> None:
     probe = await first.run(
         _intent(),
         call_id="c",
-        case_id="case-a",
         deadline=asyncio.get_running_loop().time() + 5,
         cancellation=CancellationToken.create(),
     )
@@ -271,7 +267,7 @@ async def test_verdict_selects_only_returned_rows() -> None:
     assert outcome.status == "query_sufficient" and [e.evidence_id for e in outcome.evidence] == [
         row_id
     ]
-    assert outcome.evidence[0].case_id == "case-a"
+    assert outcome.evidence[0].content_hash == "c" * 64
 
 
 @pytest.mark.asyncio

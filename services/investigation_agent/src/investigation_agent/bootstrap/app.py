@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -130,7 +131,7 @@ def run_serving(settings: Settings, secrets: ServingSecrets) -> int:
         host=settings.investigation_agent_host,
         port=settings.investigation_agent_port,
         log_level=settings.log_level.lower(),
-        timeout_graceful_shutdown=int(settings.shutdown_timeout_s),
+        timeout_graceful_shutdown=math.ceil(settings.shutdown_timeout_s),
     )
     return 0
 

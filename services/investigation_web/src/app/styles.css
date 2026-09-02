@@ -488,6 +488,59 @@ button:disabled {
   padding-top: 5px;
 }
 
+.message-assistant.is-final .message-body {
+  background:
+    linear-gradient(145deg, rgba(136, 224, 182, 0.075), transparent 42%),
+    rgba(13, 29, 26, 0.72);
+  border: 1px solid rgba(136, 224, 182, 0.14);
+  border-radius: 4px 18px 18px 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  padding: 0;
+}
+
+.message-assistant.is-final .assistant-avatar {
+  background: linear-gradient(145deg, rgba(179, 241, 210, 0.2), rgba(136, 224, 182, 0.08));
+  box-shadow: 0 8px 24px rgba(104, 214, 165, 0.12);
+}
+
+.answer-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 13px 18px;
+}
+
+.answer-header h2 {
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.verified-badge {
+  align-items: center;
+  color: var(--accent);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 650;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.verified-badge > span {
+  align-items: center;
+  background: rgba(136, 224, 182, 0.12);
+  border-radius: 50%;
+  display: inline-flex;
+  height: 17px;
+  justify-content: center;
+  width: 17px;
+}
+
 .assistant-avatar {
   align-items: center;
   background: rgba(136, 224, 182, 0.1);
@@ -511,6 +564,91 @@ button:disabled {
   line-height: 1.72;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.is-final .message-copy {
+  padding: 18px 20px 4px;
+  white-space: normal;
+}
+
+.answer-content {
+  color: #e7f0ec;
+  line-height: 1.75;
+  max-width: 68ch;
+}
+
+.answer-content > :first-child {
+  margin-top: 0;
+}
+
+.answer-content > :last-child {
+  margin-bottom: 0;
+}
+
+.answer-content p {
+  margin: 0 0 14px;
+}
+
+.answer-heading {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  margin: 24px 0 9px;
+}
+
+.answer-heading.level-2,
+.answer-heading.level-3 {
+  font-size: 14px;
+}
+
+.answer-content ul,
+.answer-content ol {
+  display: grid;
+  gap: 7px;
+  margin: 4px 0 16px;
+  padding-left: 22px;
+}
+
+.answer-content li::marker {
+  color: var(--accent);
+}
+
+.answer-content strong {
+  color: var(--ink);
+  font-weight: 680;
+}
+
+.answer-content :not(pre) > code {
+  background: rgba(184, 211, 199, 0.09);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--accent-strong);
+  font-size: 0.88em;
+  padding: 2px 5px;
+}
+
+.answer-content pre {
+  background: rgba(3, 10, 9, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted-strong);
+  margin: 8px 0 16px;
+  overflow-x: auto;
+  padding: 14px;
+  white-space: pre;
+}
+
+.answer-content blockquote {
+  border-left: 2px solid var(--accent);
+  color: var(--muted-strong);
+  margin: 8px 0 16px;
+  padding: 3px 0 3px 14px;
+}
+
+.is-final .message-footer {
+  margin: 10px 20px 16px;
 }
 
 .message-footer {
@@ -540,25 +678,115 @@ button:disabled {
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
-  margin-top: 16px;
-  padding-top: 10px;
+  margin-top: 14px;
+  padding: 12px 20px 16px;
 }
 
-.citations summary {
+.citation-summary {
+  align-items: center;
+  background: transparent;
+  border: 0;
   color: var(--muted-strong);
   cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 8px;
+  list-style: none;
+  min-height: 28px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.citation-summary:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.citation-summary-icon {
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.citation-summary-hint {
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.citation-chevron {
+  color: var(--muted);
+  font-size: 15px;
+  transform: rotate(0deg);
+  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.citations.is-open .citation-chevron {
+  transform: rotate(180deg);
+}
+
+.citation-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 260ms cubic-bezier(0.4, 0, 0.2, 1), opacity 180ms ease-out;
+}
+
+.citations.is-open .citation-disclosure {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.citation-disclosure-inner {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .citations ol {
   display: grid;
   gap: 8px;
+  list-style: none;
   margin: 10px 0 0;
-  padding-left: 20px;
+  padding: 0;
 }
 
-.citations li span {
-  display: block;
-  margin-top: 2px;
+@media (prefers-reduced-motion: reduce) {
+  .citation-chevron,
+  .citation-disclosure {
+    transition-duration: 0.01ms;
+  }
+}
+
+.citations li {
+  align-items: flex-start;
+  background: rgba(184, 211, 199, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: flex;
+  gap: 10px;
+  padding: 10px 11px;
+}
+
+.citation-index {
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(136, 224, 182, 0.08);
+  flex: 0 0 auto;
+  height: 6px;
+  margin-top: 5px;
+  width: 6px;
+}
+
+.citation-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.citation-copy strong {
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
 }
 
 .turn-notice {

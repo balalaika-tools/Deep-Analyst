@@ -100,7 +100,6 @@ class EvidenceItem(BaseModel):
 
     evidence_id: Annotated[str, Field(min_length=1, max_length=256)]
     kind: Literal["chunk", "row", "entity", "relationship", "finding"]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     content_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     source_refs: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=32)]
     content: Annotated[str | None, Field(max_length=32_000)] = None
@@ -129,7 +128,6 @@ class ToolOutcome(BaseModel):
     call_id: Annotated[str, Field(min_length=1, max_length=128)]
     intent_fingerprint: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     tool: Literal["search_evidence", "query_records", "find_connections"]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     status: OutcomeStatus
     attempts: Annotated[tuple[AttemptRecord, ...], Field(max_length=32)] = ()
     evidence: Annotated[tuple[EvidenceItem, ...], Field(max_length=256)] = ()

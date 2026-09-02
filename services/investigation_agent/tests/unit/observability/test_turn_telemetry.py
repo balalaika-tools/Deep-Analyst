@@ -139,9 +139,7 @@ def _service(graph: Graph, factory: AttemptTelemetryFactory) -> InvokeTurn:
 
 async def _stream(service: InvokeTurn) -> list[dict[str, Any]]:
     prepared = await service.prepare(
-        InvokeRequest(
-            request_id="request-1", thread_id="thread-1", case_id="case-1", message=PII_MESSAGE
-        )
+        InvokeRequest(request_id="request-1", thread_id="thread-1", message=PII_MESSAGE)
     )
     return [
         json.loads(e["data"])
@@ -235,9 +233,7 @@ async def test_replay_and_disconnect_do_not_leave_open_roots(
     service = _service(graph, factory)
     await _stream(service)
     prepared = await service.prepare(
-        InvokeRequest(
-            request_id="request-1", thread_id="thread-1", case_id="case-1", message=PII_MESSAGE
-        )
+        InvokeRequest(request_id="request-1", thread_id="thread-1", message=PII_MESSAGE)
     )
     assert prepared.telemetry is None
     events = [
@@ -248,9 +244,7 @@ async def test_replay_and_disconnect_do_not_leave_open_roots(
 
     disconnected_graph = Graph()
     disconnected = await _service(disconnected_graph, factory).prepare(
-        InvokeRequest(
-            request_id="request-9", thread_id="thread-9", case_id="case-1", message="hello"
-        )
+        InvokeRequest(request_id="request-9", thread_id="thread-9", message="hello")
     )
     probes = 0
 

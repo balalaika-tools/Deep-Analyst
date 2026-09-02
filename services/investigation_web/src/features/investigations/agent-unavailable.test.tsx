@@ -5,7 +5,7 @@ import { AgentUnavailable } from "./agent-unavailable";
 
 describe("AgentUnavailable", () => {
   it("keeps the frontend useful and points operators to the ingestion failure logs", () => {
-    render(<AgentUnavailable retryHref="/cases/case-1" />);
+    render(<AgentUnavailable retryHref="/threads/thread-1" />);
 
     expect(
       screen.getByRole("heading", { name: "Investigation backend unavailable" }),
@@ -14,7 +14,7 @@ describe("AgentUnavailable", () => {
     expect(screen.getByText("Unavailable")).toBeVisible();
     expect(screen.getByRole("link", { name: "Try again" })).toHaveAttribute(
       "href",
-      "/cases/case-1",
+      "/threads/thread-1",
     );
     expect(screen.getByRole("link", { name: "Open Grafana logs" })).toHaveAttribute(
       "href",

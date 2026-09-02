@@ -5,7 +5,7 @@ import "./styles.css";
 
 export const metadata: Metadata = {
   title: "Deep Analyst",
-  description: "Case-scoped investigation workspace",
+  description: "Global evidence investigation workspace",
 };
 
 export const viewport: Viewport = {

@@ -11,7 +11,6 @@ from dataset.sources import build_policy
 
 
 def build_provenance_dags(
-    case_id: str,
     ref_catalog: dict[str, dict[str, Any]],
     assertions: list[dict[str, Any]],
     event_crosswalks: list[dict[str, Any]],
@@ -107,7 +106,6 @@ def build_provenance_dags(
         add_edge(root["node_id"], "EVALUATED_UNDER", policy_node["node_id"])
         dag = {
             "dag_id": dag_id,
-            "case_id": case_id,
             "root_node_id": root["node_id"],
             "nodes": nodes,
             "edges": edges,

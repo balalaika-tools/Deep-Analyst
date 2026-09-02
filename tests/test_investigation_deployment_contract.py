@@ -167,7 +167,7 @@ def test_investigation_documentation_covers_runtime_contracts() -> None:
         "nested `create_agent`",
         "hybrid",
         "agent_read",
-        "app.case_id",
+        "global evidence",
         "checkpoint",
         "answer.delta",
         "source reference",
@@ -179,9 +179,8 @@ def test_investigation_documentation_covers_runtime_contracts() -> None:
     ):
         assert required in combined
     for command in (
-        "docker compose up --build --wait agent-db-init",
-        "docker compose up -d --wait investigation-agent",
+        "docker compose up -d --build --wait",
         "http://localhost:8080/v1/agent/invoke",
-        "http://localhost:8080/v1/threads",
+        "/v1/threads",
     ):
         assert command in readme

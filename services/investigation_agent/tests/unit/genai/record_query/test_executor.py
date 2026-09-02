@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import psycopg
 import pytest
 from investigation_agent.genai.record_query.executor import ExecutorLimits, execute_guarded_select
 from investigation_agent.genai.record_query.schemas import ParameterType, SqlParameter, SqlPlan
@@ -26,7 +27,6 @@ class _Cursor:
         self._result_batch = [
             {
                 "record_id": "bank:t-1",
-                "case_id": "case-a",
                 "content_hash": "c" * 64,
                 "source_refs": [
                     {
@@ -59,7 +59,6 @@ class _Cursor:
         return [
             {
                 "record_id": "bank:t-1",
-                "case_id": "case-a",
                 "content_hash": "c" * 64,
                 "text": None,
                 "payload": {"amount_minor": 500},
@@ -93,7 +92,7 @@ def _plan(sql: str | None = None) -> SqlPlan:
     return SqlPlan(
         sql=sql
         or (
-            "SELECT record_id, case_id, content_hash, source_refs, amount_minor "
+            "SELECT record_id, content_hash, source_refs, amount_minor "
             "FROM agent_read.transactions_v1 WHERE amount_minor >= $1"
         ),
         parameters=(SqlParameter(position=1, parameter_type=ParameterType.INTEGER, value=100),),
@@ -102,12 +101,11 @@ def _plan(sql: str | None = None) -> SqlPlan:
 
 
 @pytest.mark.asyncio
-async def test_executor_sets_scope_in_transaction_and_applies_an_outer_limit() -> None:
+async def test_executor_sets_read_controls_and_applies_an_outer_limit() -> None:
     pool = _Pool()
 
     result = await execute_guarded_select(
         pool=pool,
-        case_id="case-a",
         plan=_plan(),
         deadline=asyncio.get_running_loop().time() + 5,
         limits=ExecutorLimits(max_rows=3, max_bytes=10_000),
@@ -118,7 +116,7 @@ async def test_executor_sets_scope_in_transaction_and_applies_an_outer_limit() -
     assert result.rows[0].evidence_id.startswith("row:bank:t-1:")
     statements = [statement for statement, _params in pool.cursor.executions]
     assert statements[0] == "SET TRANSACTION READ ONLY"
-    assert "set_config('app.case_id', $1, true)" in statements[1]
+    assert "set_config('statement_timeout', $1, true)" in statements[1]
     assert statements[2].endswith("LIMIT $2")
     assert pool.cursor.executions[2][1] == (100, 4)
 
@@ -129,10 +127,120 @@ async def test_policy_rejection_happens_before_pool_checkout() -> None:
 
     result = await execute_guarded_select(
         pool=pool,
-        case_id="case-a",
         plan=SqlPlan(sql="SELECT 1", expected_shape="rows"),
         deadline=asyncio.get_running_loop().time() + 5,
     )
 
     assert result.status == "rejected"
     assert pool.checkouts == 0
+
+
+class _RaisingPool(_Pool):
+    def __init__(self, errors: list[BaseException]) -> None:
+        super().__init__()
+        self._errors = errors
+
+    def connection(self, timeout: float | None = None) -> _Context:
+        lease = super().connection(timeout)
+        if self._errors:
+            raise self._errors.pop(0)
+        return lease
+
+
+async def _no_sleep(_: float) -> None:
+    return None
+
+
+@pytest.mark.asyncio
+async def test_cancellation_propagates_instead_of_becoming_a_result() -> None:
+    pool = _RaisingPool([asyncio.CancelledError()])
+
+    with pytest.raises(asyncio.CancelledError):
+        await execute_guarded_select(
+            pool=pool,
+            plan=_plan(),
+            deadline=asyncio.get_running_loop().time() + 5,
+            sleep=_no_sleep,
+        )
+
+
+@pytest.mark.asyncio
+async def test_text_array_parameters_are_bound_as_lists() -> None:
+    pool = _Pool()
+    plan = SqlPlan(
+        sql=(
+            "SELECT record_id, content_hash, source_refs, debtor_iban "
+            "FROM agent_read.transactions_v1 WHERE debtor_iban = ANY($1)"
+        ),
+        parameters=(
+            SqlParameter(
+                position=1,
+                parameter_type=ParameterType.TEXT_ARRAY,
+                value=("DE01", "DE02"),
+            ),
+        ),
+        expected_shape="rows",
+    )
+
+    assert plan.parameters[0].value == ("DE01", "DE02")
+    assert plan.parameter_values() == (["DE01", "DE02"],)
+
+    result = await execute_guarded_select(
+        pool=pool,
+        plan=plan,
+        deadline=asyncio.get_running_loop().time() + 5,
+    )
+
+    assert result.status == "ok"
+    assert pool.cursor.executions[2][1] == (["DE01", "DE02"], 201)
+
+
+@pytest.mark.asyncio
+async def test_statement_timeout_is_not_retried() -> None:
+    pool = _RaisingPool([psycopg.errors.QueryCanceled("canceling statement due to timeout")])
+
+    result = await execute_guarded_select(
+        pool=pool,
+        plan=_plan(),
+        deadline=asyncio.get_running_loop().time() + 5,
+        limits=ExecutorLimits(max_physical_attempts=3),
+        sleep=_no_sleep,
+    )
+
+    assert result.status == "failed"
+    assert result.diagnostic is not None and result.diagnostic.code == "query_timeout"
+    assert result.physical_attempts == 1
+    assert pool.checkouts == 1
+
+
+@pytest.mark.asyncio
+async def test_transient_error_is_retried_once() -> None:
+    pool = _RaisingPool([psycopg.OperationalError("connection reset")])
+
+    result = await execute_guarded_select(
+        pool=pool,
+        plan=_plan(),
+        deadline=asyncio.get_running_loop().time() + 5,
+        sleep=_no_sleep,
+    )
+
+    assert result.status == "ok"
+    assert result.physical_attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_exhausted_deadline_during_retry_reports_a_timeout_failure() -> None:
+    pool = _RaisingPool([psycopg.OperationalError("connection reset")])
+    deadline = asyncio.get_running_loop().time() + 1e-9
+
+    result = await execute_guarded_select(
+        pool=pool,
+        plan=_plan(),
+        deadline=deadline,
+        limits=ExecutorLimits(max_physical_attempts=3),
+        sleep=_no_sleep,
+    )
+
+    assert result.status == "failed"
+    assert result.diagnostic is not None and result.diagnostic.code == "query_timeout"
+    assert result.physical_attempts == 1

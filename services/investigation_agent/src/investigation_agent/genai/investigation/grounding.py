@@ -38,7 +38,7 @@ def deterministic_violations(
     max_answer_chars: int,
     coverage_incomplete: bool,
 ) -> tuple[str, ...]:
-    """Check identifiers, case, provenance, status qualification, size, and absence claims."""
+    """Check identifiers, provenance, status qualification, size, and absence claims."""
 
     violations: list[str] = []
     cards = state.evidence.cards
@@ -48,8 +48,6 @@ def deterministic_violations(
     if unknown := sorted(item for item in cited if item not in cards):
         violations.append(f"unknown_evidence_ids:{','.join(unknown)}")
     known = [cards[item] for item in sorted(cited) if item in cards]
-    if any(card.case_id != state.control.case_id for card in known):
-        violations.append("cross_case_citation")
     if any(not card.source_refs or not card.content_hash for card in known):
         violations.append("missing_provenance")
     for claim in draft.claims:

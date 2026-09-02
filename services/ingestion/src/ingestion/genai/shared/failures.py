@@ -10,6 +10,7 @@ from botocore.exceptions import (
     NoCredentialsError,
     ReadTimeoutError,
 )
+from langchain.agents.structured_output import StructuredOutputValidationError
 
 from ingestion.ports.entity_extractor import (
     ExtractionError,
@@ -50,6 +51,16 @@ def is_transient(exc: BaseException) -> bool:
     if isinstance(exc, ClientError):
         return error_code(exc) in TRANSIENT_ERROR_CODES
     return isinstance(exc, _TRANSIENT_TYPES)
+
+
+def is_retryable(exc: BaseException) -> bool:
+    """True when another model attempt can recover without changing the input.
+
+    Invalid provider-native structured output is not an infrastructure failure,
+    but a fresh generation can repair it. If all attempts are exhausted it stays
+    a permanent extraction failure rather than being mislabeled as transient.
+    """
+    return isinstance(exc, StructuredOutputValidationError) or is_transient(exc)
 
 
 def translate_provider_error(exc: BaseException, *, operation: str) -> ExtractionError:

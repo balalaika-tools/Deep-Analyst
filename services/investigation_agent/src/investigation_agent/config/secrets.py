@@ -48,6 +48,8 @@ def _dotenv_paths(model: type[_SecretSettings]) -> tuple[Path, ...]:
 
 
 def _nonempty_dotenv_fields(paths: tuple[Path, ...]) -> set[str]:
+    """Non-empty ``AGENT_*`` assignments; other names are Settings, not secrets."""
+
     names: set[str] = set()
     for path in paths:
         try:
@@ -56,7 +58,9 @@ def _nonempty_dotenv_fields(paths: tuple[Path, ...]) -> set[str]:
             continue
         for line in lines:
             match = _DOTENV_ASSIGNMENT.match(line)
-            if match and match.group(2).strip().strip("'\""):
+            if not match or not match.group(1).startswith(_SECRET_NAME_PREFIX):
+                continue
+            if match.group(2).strip().strip("'\""):
                 names.add(match.group(1))
     return names
 

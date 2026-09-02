@@ -47,7 +47,6 @@ from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
 
 NOW = datetime(2026, 5, 6, 7, 8, tzinfo=UTC)
-CASE = "case-1"
 POLICY = RetryPolicy(
     max_attempts=2, initial_delay_s=0, backoff_factor=1, max_delay_s=0, jitter=False
 )
@@ -56,6 +55,7 @@ POLICY = RetryPolicy(
 class ScriptedChatModel(BaseChatModel):
     responses: list[AIMessage]
     failures: int = 0
+    errors: dict[int, Exception] = {}
     calls: int = 0
     seen: list[list[BaseMessage]] = []
 
@@ -81,6 +81,8 @@ class ScriptedChatModel(BaseChatModel):
         self.calls += 1
         if self.calls <= self.failures:
             raise TimeoutError("transient provider failure")
+        if self.calls in self.errors:
+            raise self.errors[self.calls]
         index = min(self.calls - self.failures - 1, len(self.responses) - 1)
         template = self.responses[index]
         # Real providers mint fresh message and tool-call IDs per call; the reducer keys on them.
@@ -120,12 +122,10 @@ def evidence(
     kind: str = "chunk",
     content: str = "Transfer of 50 to account 77",
     status: str = "verified",
-    case_id: str = CASE,
 ) -> EvidenceItem:
     return EvidenceItem(
         evidence_id=evidence_id,
         kind=kind,
-        case_id=case_id,
         content_hash=canonical_fingerprint(content),
         source_refs=(
             SourceRef(record_id=f"record-{evidence_id}", locator=FieldLocator(field="text")),
@@ -159,14 +159,12 @@ def outcome(
     *,
     status: OutcomeStatus = OutcomeStatus.SUFFICIENT,
     items: Sequence[EvidenceItem] = (),
-    case_id: str = CASE,
     warnings: Sequence[str] = (),
 ) -> ToolOutcome:
     return ToolOutcome(
         call_id=f"{tool_name}-call",
         intent_fingerprint="a" * 64,
         tool=tool_name,
-        case_id=case_id,
         status=status,
         evidence=tuple(items),
         warnings=tuple(warnings),
@@ -281,7 +279,6 @@ class Harness:
 
     def context(self, *, thread_id: str, request_id: str, seconds: float = 30) -> RuntimeContext:
         return RuntimeContext(
-            case_id=CASE,
             thread_id=thread_id,
             request_id=request_id,
             deadline=datetime.now(UTC) + timedelta(seconds=seconds),
@@ -304,16 +301,13 @@ class Harness:
             request_id=request_id,
             message_id=stable_message_id(turn_id),
             utterance=message,
-            case_id=CASE,
             opened_at=NOW,
         )
         payload: dict[str, Any] = {
             "messages": [HumanMessage(content=message, id=turn.user_message_id)]
         }
         if existing is None:
-            payload.update(
-                state_update(control=ControlState(case_id=CASE, policy_version="v1"), turn=turn)
-            )
+            payload.update(state_update(control=ControlState(policy_version="v1"), turn=turn))
         else:
             payload.update(state_update(turn=turn))
         return payload
@@ -360,10 +354,13 @@ def build_harness(
     guardrail: Callable[[str, RuntimeContext], Any] | None = None,
     agent_limits: AgentLimits | None = None,
     failures: int = 0,
+    errors: Mapping[int, Exception] | None = None,
     saver: InMemorySaver | None = None,
     interrupt_after: Sequence[str] = (),
 ) -> Harness:
-    model = ScriptedChatModel(responses=list(responses), failures=failures, seen=[])
+    model = ScriptedChatModel(
+        responses=list(responses), failures=failures, errors=dict(errors or {}), seen=[]
+    )
     behaviour = behaviour or FakeToolBehaviour()
     verifier = FakeStructuredRunner(verifier_results)
     closure = FakeStructuredRunner(closure_results)

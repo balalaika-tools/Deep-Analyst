@@ -38,6 +38,9 @@ class EvidenceGuardrailVerdict(BaseModel):
     items: Annotated[tuple[EvidenceGuardItem, ...], Field(max_length=128)]
 
 
+MAX_RENDERED_EVIDENCE_CHARS = 32_768
+
+
 class NormalizedEvidence(BaseModel):
     """Model-facing wrapper; exact application evidence remains unchanged elsewhere."""
 
@@ -45,7 +48,7 @@ class NormalizedEvidence(BaseModel):
 
     evidence_id: str
     content_hash: str
-    rendered: Annotated[str, Field(max_length=32_768)]
+    rendered: Annotated[str, Field(max_length=MAX_RENDERED_EVIDENCE_CHARS)]
     suspicious: bool
     guard_status: str
 
@@ -61,6 +64,7 @@ class GuardedEvidenceBatch(BaseModel):
 
 
 __all__ = [
+    "MAX_RENDERED_EVIDENCE_CHARS",
     "EvidenceGuardItem",
     "EvidenceGuardrailVerdict",
     "GuardedEvidenceBatch",

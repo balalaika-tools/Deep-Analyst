@@ -19,31 +19,27 @@ from ingestion.db.engine import build_session_factory
 from ingestion.db.repositories import table_counts
 from ingestion.db.store import SqlEvidenceStore
 from ingestion.domain.chunking import Chunk
+from ingestion.domain.records import SourceBatch, SourceRecord, content_hash
 from ingestion.ports.ingestion_ledger import RunStart
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
-
-CASE = "case_trg_001"
 
 
 def _graph() -> tuple[list[EntityDraft], list[RelationshipDraft]]:
     ref = SourceRef(record_id="cdr:c01", locator=FieldLocator(field="calling_msisdn"))
     a = EntityDraft(
-        case_id=CASE,
         entity_type=EntityType.PHONE,
         label="a",
         normalized_key="306971234567",
         source_refs=[ref],
     )
     b = EntityDraft(
-        case_id=CASE,
         entity_type=EntityType.PHONE,
         label="b",
         normalized_key="306949876543",
         source_refs=[ref],
     )
     edge = RelationshipDraft(
-        case_id=CASE,
         subject=EndpointRef(entity_id=a.entity_id, entity_type=EntityType.PHONE),
         predicate=Predicate.COMMUNICATED_WITH,
         object=EndpointRef(entity_id=b.entity_id, entity_type=EntityType.PHONE),
@@ -56,8 +52,8 @@ def _graph() -> tuple[list[EntityDraft], list[RelationshipDraft]]:
 
 
 async def _persist_everything(store: SqlEvidenceStore, edition_dir: Path) -> None:
-    await store.persist_source(cdr.load_cdr(edition_dir, CASE))
-    docs = documents.load_documents(edition_dir, CASE)
+    await store.persist_source(cdr.load_cdr(edition_dir))
+    docs = documents.load_documents(edition_dir)
     await store.persist_source(docs)
     items: list[Any] = [
         (record, Chunk(0, len(record.text or ""), record.text or ""), [0.1, 0.2, 0.3, 0.4])
@@ -87,6 +83,37 @@ async def test_running_the_same_batch_twice_leaves_identical_counts(
 
 
 @pytest.mark.asyncio
+async def test_source_local_identifier_collision_creates_distinct_records(
+    engine: AsyncEngine,
+) -> None:
+    store = SqlEvidenceStore(build_session_factory(engine))
+    records = [
+        SourceRecord(
+            source_system=source,
+            source_record_id="shared-1",
+            record_type="document",
+            event_time_utc=None,
+            original_time=None,
+            text=source,
+            payload={"source": source},
+            source_path=f"raw/{source}",
+            content_hash=content_hash({"source": source}),
+        )
+        for source in ("docs", "email")
+    ]
+    for record in records:
+        await store.persist_source(
+            SourceBatch(source_system=record.source_system, records=[record])
+        )
+
+    async with build_session_factory(engine)() as session:
+        counts = await table_counts(session)
+
+    assert {record.record_id for record in records} == {"docs:shared-1", "email:shared-1"}
+    assert counts["records"] == 2
+
+
+@pytest.mark.asyncio
 async def test_bm25_query_for_the_invoice_reference_ranks_exact_matches_first(
     engine: AsyncEngine, edition_dir: Path
 ) -> None:
@@ -110,12 +137,12 @@ async def test_bm25_query_for_the_invoice_reference_ranks_exact_matches_first(
 @pytest.mark.asyncio
 async def test_run_ledger_round_trip(engine: AsyncEngine) -> None:
     store = SqlEvidenceStore(build_session_factory(engine))
-    start = RunStart(CASE, "fp-1", "v1", "embed", datetime(2026, 9, 2, tzinfo=UTC))
+    start = RunStart("fp-1", "v1", "embed", datetime(2026, 9, 2, tzinfo=UTC))
 
-    assert not await store.has_completed(CASE, "fp-1")
+    assert not await store.has_completed("fp-1")
     run_id = await store.start(start)
     await store.fail(run_id, completed_at=datetime.now(UTC), error_type="RuntimeError")
-    assert not await store.has_completed(CASE, "fp-1")
+    assert not await store.has_completed("fp-1")
     run_id = await store.start(start)
     await store.complete(run_id, completed_at=datetime.now(UTC), summary={"records": 1})
-    assert await store.has_completed(CASE, "fp-1")
+    assert await store.has_completed("fp-1")

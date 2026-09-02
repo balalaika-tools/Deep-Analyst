@@ -31,14 +31,12 @@ from dataset.sql import render_bank_sql
 def _raw_file_entry(
     root: Path,
     raw_path: str,
-    case_id: str,
     source: str,
     source_version: str,
     records: list[dict[str, str]],
 ) -> dict[str, Any]:
     data = (root / raw_path).read_bytes()
     return {
-        "case_id": case_id,
         "source": source,
         "source_version": source_version,
         "raw_path": raw_path,
@@ -51,7 +49,6 @@ def _raw_file_entry(
 def write_dataset(
     root: Path,
     seed: int,
-    case_id: str,
     variant_id: str | None,
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
@@ -95,7 +92,6 @@ def write_dataset(
         _raw_file_entry(
             root,
             "raw/cdr.csv",
-            case_id,
             "cdr",
             state.SOURCE_VERSIONS["cdr"],
             [
@@ -112,7 +108,6 @@ def write_dataset(
         _raw_file_entry(
             root,
             "raw/extraction.jsonl",
-            case_id,
             "extraction",
             state.SOURCE_VERSIONS["extraction"],
             [
@@ -144,7 +139,6 @@ def write_dataset(
         _raw_file_entry(
             root,
             "raw/bank.sql",
-            case_id,
             "bank",
             state.SOURCE_VERSIONS["bank"],
             bank_records,
@@ -160,7 +154,6 @@ def write_dataset(
             _raw_file_entry(
                 root,
                 "raw/emails/{}.eml".format(email["email_id"]),
-                case_id,
                 "email",
                 state.SOURCE_VERSIONS["email"],
                 [
@@ -182,7 +175,6 @@ def write_dataset(
             _raw_file_entry(
                 root,
                 "raw/docs/{}.md".format(document["document_id"]),
-                case_id,
                 "docs",
                 state.SOURCE_VERSIONS["docs"],
                 [
@@ -224,7 +216,6 @@ def write_dataset(
         "language": state.ACTIVE_LOCALE,
         "edition_role": "primary" if state.ACTIVE_LOCALE == DEFAULT_LOCALE else "alternate",
         "policy_version": POLICY_VERSION,
-        "case_id": case_id,
         "variant_id": variant_id,
         "rng_seed": seed,
         "generated_at": GENERATED_AT,

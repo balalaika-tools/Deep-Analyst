@@ -35,10 +35,11 @@ def test_natural_key_constraints_and_projection_indexes_are_declared() -> None:
     assert "uq_records_natural_key" in ddl["records"]
     assert "uq_entities_key" in ddl["entities"]
     assert "uq_chunks_span" in ddl["chunks"]
-    assert "ix_transactions_case_amount" in ddl["transactions"]
-    assert "ix_transactions_case_booking" in ddl["transactions"]
-    assert "ix_communications_case_from" in ddl["communications"]
-    assert "ix_accounts_case_iban" in ddl["accounts"]
+    assert "ix_transactions_amount" in ddl["transactions"]
+    assert "ix_transactions_booking" in ddl["transactions"]
+    assert "ix_communications_from" in ddl["communications"]
+    assert "ix_accounts_iban" in ddl["accounts"]
+    assert "_".join(("case", "id")) not in "".join(ddl.values()).lower()
 
 
 def test_chunk_embedding_is_a_dimensionless_vector_and_payloads_are_jsonb() -> None:

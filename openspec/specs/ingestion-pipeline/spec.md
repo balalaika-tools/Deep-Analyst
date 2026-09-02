@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Turn the synthetic case fixture into queryable evidence: common records, normalized
+Turn the synthetic fixture into queryable evidence: common records, normalized
 identifiers, deterministic and constrained LLM-derived graph edges, and embedded text chunks,
 through a one-shot, idempotent, observable run.
 
@@ -29,15 +29,16 @@ and the containerized run SHALL have no filesystem access to the repository data
 - **THEN** the run never lists or downloads them
 
 ### Requirement: Common record envelope
-Every source item SHALL become exactly one record carrying the case identifier, source
-system, stable source record identifier, record type, UTC event time with the original
-timestamp retained, searchable text when the source has prose, a structured payload
-preserving source-specific fields and original lexemes, the source path, and a content hash.
+Every source item SHALL become exactly one globally identified record carrying its source system,
+stable source record identifier, record type, UTC event time with the original timestamp retained,
+searchable text when the source has prose, a structured payload preserving source-specific fields
+and original lexemes, source path, and content hash. The envelope SHALL NOT carry or derive an
+evidence partition identifier.
 
 #### Scenario: Record counts match the manifest
 - **WHEN** a run completes against the English edition
 - **THEN** the store holds 55 CDR, 18 device-extraction, 6 email, 18 account, 35 transaction,
-  and 10 document records for `case_trg_001`
+  and 10 document records
 
 #### Scenario: Original values survive normalization
 - **WHEN** transaction `t_88` is ingested
@@ -49,6 +50,21 @@ preserving source-specific fields and original lexemes, the source path, and a c
 - **WHEN** a Markdown document with YAML front matter is ingested
 - **THEN** the front-matter fields are stored in the payload and the record text contains only
   the document body
+
+### Requirement: Global ingestion identity
+The pipeline SHALL derive globally unique, deterministic record, entity, relationship, chunk,
+projection, and run identities from stable source-qualified inputs without an evidence partition
+component. Upserts and relationship resolution SHALL use those global identities and SHALL remain
+idempotent.
+
+#### Scenario: Two source systems reuse a local identifier
+- **WHEN** two source systems provide the same source-local identifier
+- **THEN** ingestion creates distinct globally unique records by including source identity in the
+  deterministic key
+
+#### Scenario: The same edition is ingested twice
+- **WHEN** the pipeline processes the same edition twice
+- **THEN** record, entity, relationship, chunk, and projection counts remain unchanged
 
 ### Requirement: Deterministic normalization
 Hard fields SHALL be normalized by code, never by a model: phone numbers to a canonical

@@ -33,7 +33,6 @@ vi.mock("@/features/investigations/client", async (importOriginal) => {
 
 const thread: ThreadSummary = {
   thread_id: "thread-1",
-  case_id: "case-1",
   turn_id: "turn-1",
   status: "completed",
   created_at: "2026-09-02T12:00:00Z",
@@ -42,7 +41,6 @@ const thread: ThreadSummary = {
 function renderWorkspace() {
   return render(
     <ConversationWorkspace
-      caseId="case-1"
       initialMessages={{ items: [], next_cursor: null }}
       initialThreads={{ items: [thread], next_cursor: null }}
       threadId="thread-1"
@@ -63,31 +61,31 @@ describe("ConversationWorkspace deletion", () => {
     deleteThread.mockResolvedValue(undefined);
     renderWorkspace();
 
-    await user.click(screen.getAllByRole("button", { name: "Delete conversation for case-1" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "Delete conversation thread-1" })[0]!);
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(deleteThread).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(deleteThread).toHaveBeenCalledWith("thread-1"));
     expect(screen.queryByText("Sep 2")).not.toBeInTheDocument();
-    expect(push).toHaveBeenCalledWith("/cases/case-1");
+    expect(push).toHaveBeenCalledWith("/");
   });
 
   it("keeps the thread and shows a safe error when deletion fails", async () => {
     const user = userEvent.setup();
     deleteThread.mockRejectedValue(new Error("The conversation could not be deleted."));
     renderWorkspace();
-    await user.click(screen.getAllByRole("button", { name: "Delete conversation for case-1" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "Delete conversation thread-1" })[0]!);
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be deleted");
-    expect(screen.getAllByRole("link", { name: /case-1/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /conversation/i }).length).toBeGreaterThan(0);
   });
 
   it("closes confirmation without sending a request", async () => {
     const user = userEvent.setup();
     renderWorkspace();
-    await user.click(screen.getAllByRole("button", { name: "Delete conversation for case-1" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "Delete conversation thread-1" })[0]!);
     await user.click(screen.getByRole("button", { name: "Keep conversation" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(deleteThread).not.toHaveBeenCalled();
@@ -148,7 +146,6 @@ describe("ConversationWorkspace deletion", () => {
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1]).toMatchObject({
       thread_id: requests[0]?.thread_id,
-      case_id: requests[0]?.case_id,
       message: requests[0]?.message,
     });
     expect(requests[1]?.request_id).not.toBe(requests[0]?.request_id);

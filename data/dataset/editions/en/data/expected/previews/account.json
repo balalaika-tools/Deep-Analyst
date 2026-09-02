@@ -1,6 +1,5 @@
 {
   "canonical": {
-    "case_id": "case_trg_001",
     "event_time_utc": null,
     "ingested_at": "2026-03-11T00:00:00Z",
     "normalized_payload": {
@@ -10,11 +9,11 @@
     },
     "original_time_value": "2020-02-17",
     "parser_version": "bank-parser@1",
-    "raw_content_hash": "92e1f20dd7a5870cf96197505aeeb9ed686ea6c96f18f1f41036f2f2cda430cf",
+    "raw_content_hash": "2dae322ca401823657ca2d7c33529ef38120214e0860e011fa18bba447d7a28d",
     "raw_object_uri": "raw/bank.sql",
-    "record_id": "case_trg_001:bank:acct_aegean",
+    "record_id": "bank:acct_aegean",
     "record_type": "ACCOUNT",
-    "record_version_id": "case_trg_001:bank:acct_aegean:v1",
+    "record_version_id": "bank:acct_aegean:2dae322ca401823657ca2d7c33529ef38120214e0860e011fa18bba447d7a28d",
     "source_record_id": "acct_aegean",
     "source_system": "bank",
     "source_version_id": "bank@1-en"
@@ -22,7 +21,6 @@
   "raw": {
     "account_id": "acct_aegean",
     "bic": "TRGSGR2A",
-    "case_id": "case_trg_001",
     "holder_name": "Aegean Trade OE",
     "holder_type": "organization",
     "iban": "GR9201100010000000000046118",

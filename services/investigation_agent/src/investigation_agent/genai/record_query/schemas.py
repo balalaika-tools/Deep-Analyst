@@ -31,7 +31,7 @@ class QueryConstraint(StrictModel):
 
 
 class QueryIntent(StrictModel):
-    """Main-agent-authored intent without case scope, credentials, roles, or prior SQL."""
+    """Main-agent-authored intent without credentials, roles, or prior SQL."""
 
     question: Annotated[str, Field(min_length=1, max_length=8_000)]
     objective: Annotated[str, Field(min_length=1, max_length=4_000)]
@@ -63,6 +63,7 @@ class ParameterType(StrEnum):
 
 
 type ParameterValue = str | int | Decimal | bool | date | datetime | tuple[str, ...] | None
+type BoundParameterValue = str | int | Decimal | bool | date | datetime | list[str] | None
 
 
 class SqlParameter(StrictModel):
@@ -135,8 +136,17 @@ class SqlPlan(StrictModel):
             raise ValueError("SQL parameters must be ordered in contiguous one-based positions")
         return self
 
-    def parameter_values(self) -> tuple[ParameterValue, ...]:
-        return tuple(item.value for item in self.parameters)
+    def parameter_values(self) -> tuple[BoundParameterValue, ...]:
+        """Values in bind order, with arrays as lists so psycopg adapts them as arrays.
+
+        The schema keeps ``text_array`` values as tuples for immutability, but psycopg
+        adapts a tuple as a composite record, which breaks ``= ANY($n)``.
+        """
+
+        return tuple(
+            list(item.value) if isinstance(item.value, tuple) else item.value
+            for item in self.parameters
+        )
 
 
 class DiagnosticClass(StrEnum):
@@ -190,7 +200,6 @@ class ResultField(StrictModel):
 
 class StructuredRowEvidence(StrictModel):
     evidence_id: Annotated[str, Field(min_length=1, max_length=256)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     content_hash: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     source_refs: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=32)]
     kind: Literal["row"] = "row"

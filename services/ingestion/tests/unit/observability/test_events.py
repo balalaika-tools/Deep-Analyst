@@ -2,7 +2,7 @@ from collections import Counter
 from typing import Any
 
 import pytest
-from ingestion.application.ingest_case import IngestionPlan, ingest_case
+from ingestion.application.ingest_dataset import IngestionPlan, ingest_dataset
 from ingestion.observability.events import IngestionInstruments
 from observability import start_genai_span
 from opentelemetry.sdk.metrics import MeterProvider
@@ -63,7 +63,7 @@ async def test_a_fake_run_emits_the_root_span_source_spans_and_candidate_counter
     deps = deps_factory(systems=("cdr", "extraction", "email", "docs"))
 
     with start_genai_span("run ingestion", tracer=tracer_provider.get_tracer("t")) as root:
-        await ingest_case(plan, deps)
+        await ingest_dataset(plan, deps)
 
     spans = exporter.get_finished_spans()
     by_name = Counter(span.name for span in spans)
@@ -139,7 +139,7 @@ async def test_failed_record_attempt_is_an_errored_root_linked_to_the_coordinato
 
     with start_genai_span("run ingestion", tracer=tracer_provider.get_tracer("t")) as root:
         with pytest.raises(ExceptionGroup):
-            await ingest_case(plan, deps)
+            await ingest_dataset(plan, deps)
 
     failed = next(
         span

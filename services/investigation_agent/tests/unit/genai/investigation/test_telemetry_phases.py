@@ -130,3 +130,76 @@ async def test_hook_phases_and_tool_attempts_nest_under_one_root_without_content
     for private in ("Mavridou", "GR123", "555 0101", "chunk-1", "SELECT", "received 50"):
         assert private not in serialized
     assert sum(1 for s in spans if s.name.startswith("execute_tool")) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_logical_model_operation_encloses_every_physical_retry(support: Any) -> None:
+    from investigation_agent.genai.investigation.agent import (
+        AgentComponents,
+        build_investigation_agent,
+    )
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    meter = MeterProvider(metric_readers=[InMemoryMetricReader()]).get_meter("test")
+    factory = AttemptTelemetryFactory(
+        tracer=provider.get_tracer("test"), instruments=InvestigationInstruments.create(meter)
+    )
+    responses = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                support.tool_call(
+                    "search_evidence", {"intent": {"question": "q", "objective": "o"}}, "c1"
+                )
+            ],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[
+                support.draft_call(
+                    "c2",
+                    answer="Account 77 received 50 [chunk-1].",
+                    claims=[support.claim("k1", "Account 77 received 50.", "chunk-1")],
+                )
+            ],
+        ),
+    ]
+    behaviour = support.FakeToolBehaviour(
+        outcomes={
+            "search_evidence": [
+                support.outcome("search_evidence", items=[support.evidence("chunk-1")])
+            ]
+        }
+    )
+    harness = support.build_harness(
+        responses, behaviour=behaviour, verifier_results=[support.entailed("k1")], failures=1
+    )
+    components = AgentComponents(
+        model=harness.model,
+        tools=support.fake_tools(behaviour),
+        guardrail=support.allow_all(),
+        evidence_guard=None,
+        verifier=harness.verifier,
+        closure=harness.closure,
+        projection_model=harness.projection,
+        retry_policy=support.POLICY,
+        transient_errors=(TimeoutError,),
+        telemetry=(LogicalModelTelemetryMiddleware(),),
+    )
+    harness.agent = build_investigation_agent(
+        components, limits=support.limits(), checkpointer=harness.saver
+    )
+    attempt = factory.create(
+        thread_id="thread-1", turn_id="turn-x", attempt=1, prior_trace_carrier=None
+    )
+
+    with attempt.activate():
+        state, _ = await harness.run_turn()
+    attempt.finish()
+
+    assert state.turn is not None and state.turn.status is TurnStatus.COMPLETED
+    assert harness.model.calls == 3
+    spans = exporter.get_finished_spans()
+    assert sum(1 for s in spans if s.name == "model_operation") == 2

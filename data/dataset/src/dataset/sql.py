@@ -29,7 +29,6 @@ def render_bank_sql(accounts: list[dict[str, Any]], transactions: list[dict[str,
 BEGIN;
 
 CREATE TABLE accounts (
-    case_id        TEXT NOT NULL,
     account_id     TEXT NOT NULL,
     iban           TEXT NOT NULL,
     holder_name    TEXT,
@@ -37,12 +36,11 @@ CREATE TABLE accounts (
     bic            TEXT,
     opened_date    TEXT,
     source_version TEXT NOT NULL,
-    PRIMARY KEY (case_id, account_id),
-    UNIQUE (case_id, iban)
+    PRIMARY KEY (account_id),
+    UNIQUE (iban)
 );
 
 CREATE TABLE transactions (
-    case_id         TEXT NOT NULL,
     txn_id          TEXT NOT NULL,
     booking_ts_utc  TEXT NOT NULL,
     value_date      TEXT NOT NULL,
@@ -57,9 +55,9 @@ CREATE TABLE transactions (
     status          TEXT NOT NULL DEFAULT 'booked',
     remittance_info TEXT,
     source_version  TEXT NOT NULL,
-    PRIMARY KEY (case_id, txn_id),
-    FOREIGN KEY (case_id, debtor_iban) REFERENCES accounts (case_id, iban),
-    FOREIGN KEY (case_id, creditor_iban) REFERENCES accounts (case_id, iban)
+    PRIMARY KEY (txn_id),
+    FOREIGN KEY (debtor_iban) REFERENCES accounts (iban),
+    FOREIGN KEY (creditor_iban) REFERENCES accounts (iban)
 );""",
         _render_insert("accounts", ACCOUNT_COLUMNS, accounts),
         _render_insert("transactions", TRANSACTION_COLUMNS, transactions),

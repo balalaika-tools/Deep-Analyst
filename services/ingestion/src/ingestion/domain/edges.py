@@ -43,10 +43,9 @@ def _field_ref(record_id: str, field_name: str) -> SourceRef:
 
 
 def _keyed(
-    case_id: str, entity_type: EntityType, key: str, ref: SourceRef, *, label: str | None = None
+    entity_type: EntityType, key: str, ref: SourceRef, *, label: str | None = None
 ) -> EntityDraft:
     return EntityDraft(
-        case_id=case_id,
         entity_type=entity_type,
         label=label or key,
         normalized_key=key,
@@ -55,7 +54,6 @@ def _keyed(
 
 
 def _confirmed(
-    case_id: str,
     subject: EntityDraft,
     predicate: Predicate,
     obj: EntityDraft,
@@ -66,7 +64,6 @@ def _confirmed(
     attributes: dict[str, object] | None = None,
 ) -> RelationshipDraft:
     return RelationshipDraft(
-        case_id=case_id,
         subject=subject.endpoint(),
         predicate=predicate,
         object=obj.endpoint(),
@@ -82,16 +79,11 @@ def _confirmed(
 def communication_edges(comm: CommunicationProjection) -> RuleOutput:
     """`COMMUNICATED_WITH` between the two normalized endpoints, plus the device if known."""
     endpoint_type = EntityType.EMAIL_ADDRESS if comm.channel == "email" else EntityType.PHONE
-    sender = _keyed(
-        comm.case_id, endpoint_type, comm.from_endpoint, _field_ref(comm.record_id, comm.from_field)
-    )
-    receiver = _keyed(
-        comm.case_id, endpoint_type, comm.to_endpoint, _field_ref(comm.record_id, comm.to_field)
-    )
+    sender = _keyed(endpoint_type, comm.from_endpoint, _field_ref(comm.record_id, comm.from_field))
+    receiver = _keyed(endpoint_type, comm.to_endpoint, _field_ref(comm.record_id, comm.to_field))
     output = RuleOutput(entities=[sender, receiver])
     output.relationships.append(
         _confirmed(
-            comm.case_id,
             sender,
             Predicate.COMMUNICATED_WITH,
             receiver,
@@ -103,9 +95,7 @@ def communication_edges(comm: CommunicationProjection) -> RuleOutput:
     )
     if comm.device_id:
         output.entities.append(
-            _keyed(
-                comm.case_id, EntityType.DEVICE, comm.device_id, _field_ref(comm.record_id, "imei")
-            )
+            _keyed(EntityType.DEVICE, comm.device_id, _field_ref(comm.record_id, "imei"))
         )
     return output
 
@@ -113,7 +103,6 @@ def communication_edges(comm: CommunicationProjection) -> RuleOutput:
 def account_edges(account: AccountProjection) -> RuleOutput:
     """The account as an asset and, when the row names a holder, a confirmed `HELD_BY`."""
     account_entity = _keyed(
-        account.case_id,
         EntityType.FINANCIAL_ACCOUNT,
         account.iban,
         _field_ref(account.record_id, "iban"),
@@ -123,7 +112,6 @@ def account_edges(account: AccountProjection) -> RuleOutput:
     if not account.holder_name or holder_type is None:
         return output
     holder = EntityDraft(
-        case_id=account.case_id,
         entity_type=holder_type,
         label=account.holder_name,
         scope_record_id=account.record_id,
@@ -132,7 +120,6 @@ def account_edges(account: AccountProjection) -> RuleOutput:
     output.entities.append(holder)
     output.relationships.append(
         _confirmed(
-            account.case_id,
             account_entity,
             Predicate.HELD_BY,
             holder,
@@ -147,24 +134,19 @@ def account_edges(account: AccountProjection) -> RuleOutput:
 def transaction_edges(txn: TransactionProjection, references: list[IdentifierSpan]) -> RuleOutput:
     """`TRANSFERRED_TO` between accounts and `REFERENCES` for each invoice in the remittance."""
     debtor = _keyed(
-        txn.case_id,
         EntityType.FINANCIAL_ACCOUNT,
         txn.debtor_iban,
         _field_ref(txn.record_id, "debtor_iban"),
     )
     creditor = _keyed(
-        txn.case_id,
         EntityType.FINANCIAL_ACCOUNT,
         txn.creditor_iban,
         _field_ref(txn.record_id, "creditor_iban"),
     )
-    transaction = _keyed(
-        txn.case_id, EntityType.TRANSACTION, txn.txn_id, _field_ref(txn.record_id, "txn_id")
-    )
+    transaction = _keyed(EntityType.TRANSACTION, txn.txn_id, _field_ref(txn.record_id, "txn_id"))
     output = RuleOutput(entities=[debtor, creditor, transaction])
     output.relationships.append(
         _confirmed(
-            txn.case_id,
             debtor,
             Predicate.TRANSFERRED_TO,
             creditor,
@@ -190,11 +172,10 @@ def transaction_edges(txn: TransactionProjection, references: list[IdentifierSpa
                 quote=span.raw,
             ),
         )
-        invoice = _keyed(txn.case_id, EntityType.INVOICE_REF, span.normalized_key, ref)
+        invoice = _keyed(EntityType.INVOICE_REF, span.normalized_key, ref)
         output.entities.append(invoice)
         output.relationships.append(
             _confirmed(
-                txn.case_id,
                 transaction,
                 Predicate.REFERENCES,
                 invoice,
@@ -207,12 +188,11 @@ def transaction_edges(txn: TransactionProjection, references: list[IdentifierSpa
 
 
 def identifier_entities(
-    case_id: str, record_id: str, spans: list[IdentifierSpan], *, field_name: str = "text"
+    record_id: str, spans: list[IdentifierSpan], *, field_name: str = "text"
 ) -> list[EntityDraft]:
     """Typed identifier entities for every rule match in prose, with text-span evidence."""
     return [
         _keyed(
-            case_id,
             span.entity_type,
             span.normalized_key,
             SourceRef(

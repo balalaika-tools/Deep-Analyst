@@ -61,7 +61,6 @@ log = get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class IngestionPlan:
-    case_id: str
     edition: str
     edition_dir: Path
     fingerprint: str
@@ -137,14 +136,13 @@ def _causal_links(coordinator_context: SpanContext) -> list[Link]:
     return [Link(coordinator_context)] if coordinator_context.is_valid else []
 
 
-async def ingest_case(plan: IngestionPlan, deps: IngestionDependencies) -> RunOutcome:
+async def ingest_dataset(plan: IngestionPlan, deps: IngestionDependencies) -> RunOutcome:
     if await _already_ingested(plan, deps):
         log.info(LogEvent.RUN_SKIPPED, fingerprint=plan.fingerprint, edition=plan.edition)
         return RunOutcome(Outcome.SKIPPED, {})
     started_at = deps.clock()
     run_id = await deps.ledger.start(
         RunStart(
-            case_id=plan.case_id,
             fingerprint=plan.fingerprint,
             dataset_version=plan.dataset_version,
             embedding_model_id=plan.embedding_model_id,
@@ -189,7 +187,7 @@ async def _already_ingested(plan: IngestionPlan, deps: IngestionDependencies) ->
     receipt = deps.receipts.read(plan.edition)
     if receipt is None or receipt.fingerprint != plan.fingerprint:
         return False
-    return await deps.ledger.has_completed(plan.case_id, plan.fingerprint)
+    return await deps.ledger.has_completed(plan.fingerprint)
 
 
 async def _run(plan: IngestionPlan, deps: IngestionDependencies, run_id: str) -> dict[str, int]:
@@ -390,9 +388,9 @@ async def _extract_chunk(
         )
         for span in spans
     ]
-    rule_entities = identifier_entities(plan.case_id, record.record_id, shifted)
+    rule_entities = identifier_entities(record.record_id, shifted)
     context = validation.ChunkContext(
-        case_id=plan.case_id, record_id=record.record_id, chunk=chunk, rule_entities=rule_entities
+        record_id=record.record_id, chunk=chunk, rule_entities=rule_entities
     )
     attributes: dict[str, AttributeValue] = {
         "gen_ai.operation.name": "invoke_workflow",

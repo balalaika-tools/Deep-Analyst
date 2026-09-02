@@ -1,6 +1,5 @@
 ---
 document_id: A-D1
-case_id: case_trg_001
 document_date: 2026-02-28
 genre: adversarial_background_report
 source_reliability: low

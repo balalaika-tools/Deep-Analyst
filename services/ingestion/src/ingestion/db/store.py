@@ -45,9 +45,9 @@ class SqlEvidenceStore:
             relationship_count = await graph.upsert_relationships(relationships)
             return entity_count, relationship_count
 
-    async def has_completed(self, case_id: str, fingerprint: str) -> bool:
+    async def has_completed(self, fingerprint: str) -> bool:
         async with self._sessions() as session:
-            return await RunLedgerRepository(session).has_completed(case_id, fingerprint)
+            return await RunLedgerRepository(session).has_completed(fingerprint)
 
     async def start(self, run: RunStart) -> str:
         async with self._sessions() as session, session.begin():

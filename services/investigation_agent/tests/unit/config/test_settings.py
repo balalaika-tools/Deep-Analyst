@@ -15,7 +15,7 @@ REQUIRED_ENV = {
     "AWS_REGION": "eu-central-1",
     "BEDROCK_CHAT_MODEL_ID": "example.chat-v1:0",
     "BEDROCK_EMBEDDING_MODEL_ID": "example.embedding-v1:0",
-    "EXPECTED_AGENT_INITIALIZER_VERSION": "agent-runtime@1",
+    "EXPECTED_AGENT_INITIALIZER_VERSION": "agent-runtime@2",
 }
 
 
@@ -98,10 +98,9 @@ def test_yaml_rejects_unknown_and_secret_keys_without_rendering_values(
     assert sentinel not in str(error.value)
 
 
-def test_committed_policy_is_content_safe_by_default(required_env: None) -> None:
+def test_committed_policy_defaults(required_env: None) -> None:
     settings = load_settings()
 
-    assert settings.capture_ai_content is False
     assert settings.lexical_weight + settings.vector_weight == 1.0
     assert settings.closure_model_calls < settings.main_model_call_limit
     assert settings.nested_tool_call_limit <= 3

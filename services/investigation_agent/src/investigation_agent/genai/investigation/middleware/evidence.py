@@ -13,6 +13,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
 from investigation_agent.core.context import RuntimeContext
+from investigation_agent.core.errors import BudgetExhaustedFailure
 from investigation_agent.domain.investigation_state import UsageCounters, upsert_evidence
 from investigation_agent.domain.tool_outcome import BudgetConsumption, OutcomeStatus, ToolOutcome
 from investigation_agent.genai.guardrails.middleware import deterministic_evidence_boundary
@@ -77,7 +78,6 @@ class EvidenceIndexMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
         index = upsert_evidence(
             parsed.evidence,
             outcome,
-            case_id=parsed.control.case_id,
             turn_id=turn.turn_id,
             max_cards=self._max_cards,
             protected_ids=parsed.projection.referenced_evidence_ids(),
@@ -113,7 +113,7 @@ class EvidenceIndexMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
             raise
         except TransientExhaustedError:
             return self._failed(tool_call_id, tool_name, OutcomeStatus.TRANSIENT_EXHAUSTED)
-        except TimeoutError:
+        except (TimeoutError, BudgetExhaustedFailure):
             return self._failed(tool_call_id, tool_name, OutcomeStatus.BUDGET_EXHAUSTED)
         except Exception:
             return self._failed(tool_call_id, tool_name, OutcomeStatus.DEPENDENCY_UNAVAILABLE)

@@ -20,7 +20,6 @@ HASH = "d" * 64
 
 def source(name: str) -> ResolvedSourceRef:
     return ResolvedSourceRef(
-        case_id="case-a",
         content_hash=HASH,
         source_ref=SourceRef(
             record_id=f"record:{name}",
@@ -32,7 +31,6 @@ def source(name: str) -> ResolvedSourceRef:
 def node(name: str) -> GraphNode:
     return GraphNode(
         entity_id=name,
-        case_id="case-a",
         entity_type=EntityType.PERSON,
         label=f"Person {name}",
         sources=(source(name),),
@@ -42,7 +40,6 @@ def node(name: str) -> GraphNode:
 def edge(name: str, left: str, right: str, *, proposed: bool = False) -> GraphEdge:
     return GraphEdge(
         relationship_id=name,
-        case_id="case-a",
         subject_entity_id=left,
         predicate=Predicate.KIN_OF,
         object_entity_id=right,
@@ -64,11 +61,9 @@ class _GraphReader:
         )
 
     async def load_graph_entities(
-        self, *, case_id: str, entity_ids: frozenset[str], row_limit: int, deadline: float
+        self, *, entity_ids: frozenset[str], row_limit: int, deadline: float
     ) -> tuple[GraphNode, ...]:
         del deadline
-        if case_id != "case-a":
-            return ()
         values = [
             item
             for name, item in self.nodes.items()
@@ -80,15 +75,12 @@ class _GraphReader:
     async def load_graph_edges(
         self,
         *,
-        case_id: str,
         frontier_entity_ids: frozenset[str],
         filters: ConnectionFilters,
         row_limit: int,
         deadline: float,
     ) -> tuple[GraphEdge, ...]:
         del deadline
-        if case_id != "case-a":
-            return ()
         values = [
             item
             for item in self.edges
@@ -126,7 +118,6 @@ async def test_traversal_is_deterministic_cycle_free_and_preserves_proposed_stat
 
     first = await FindConnections(reader=_GraphReader(), server_limits=limits).run(
         call_id="graph-1",
-        case_id="case-a",
         request=request(),
         deadline=deadline,
     )
@@ -134,7 +125,6 @@ async def test_traversal_is_deterministic_cycle_free_and_preserves_proposed_stat
         reader=_GraphReader(reverse=True), server_limits=limits
     ).run(
         call_id="graph-1",
-        case_id="case-a",
         request=request(),
         deadline=deadline,
     )
@@ -142,7 +132,7 @@ async def test_traversal_is_deterministic_cycle_free_and_preserves_proposed_stat
     assert first == reversed_result
     assert all(len(path.node_ids) == len(set(path.node_ids)) for path in first.paths)
     assert any(item.status is RelationshipStatus.PROPOSED for item in first.edges)
-    assert all(item.case_id == "case-a" for item in first.evidence)
+    assert all(item.content_hash == HASH for item in first.evidence)
 
 
 @pytest.mark.asyncio
@@ -154,7 +144,6 @@ async def test_unresolvable_endpoint_removes_unsupported_paths_and_bounds_are_ca
         server_limits=limits,
     ).run(
         call_id="graph-2",
-        case_id="case-a",
         request=request(max_depth=100, max_paths=100, max_nodes=100, max_edges=100),
         deadline=asyncio.get_running_loop().time() + 5,
     )
@@ -165,32 +154,7 @@ async def test_unresolvable_endpoint_removes_unsupported_paths_and_bounds_are_ca
     assert outcome.warnings == ("graph_limits_capped",)
 
 
-@pytest.mark.asyncio
-async def test_cross_case_seed_is_indistinguishable_from_unknown_seed() -> None:
-    runner = FindConnections(
-        reader=_GraphReader(),
-        server_limits=GraphLimits(
-            max_depth=2,
-            max_paths=5,
-            max_nodes=10,
-            max_edges=10,
-            max_rows=20,
-        ),
-    )
-
-    result = await runner.run(
-        call_id="graph-3",
-        case_id="case-b",
-        request=request(),
-        deadline=asyncio.get_running_loop().time() + 5,
-    )
-
-    assert result.status == "no_support"
-    assert result.nodes == ()
-    assert result.edges == ()
-    assert result.paths == ()
-
-
-def test_model_supplied_scope_is_rejected() -> None:
+def test_removed_scope_field_is_rejected() -> None:
+    removed_field = "case" + "_id"
     with pytest.raises(ValidationError):
-        FindConnectionsInput.model_validate({**request().model_dump(), "case_id": "case-b"})
+        FindConnectionsInput.model_validate({**request().model_dump(), removed_field: "legacy"})

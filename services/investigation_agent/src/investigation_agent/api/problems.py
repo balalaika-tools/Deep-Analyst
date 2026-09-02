@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from observability import error_type_of, get_logger, mark_failed
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
 from investigation_agent.observability.events import LogEvent
@@ -51,6 +52,9 @@ _FAILURES: dict[str, PublicFailure] = {
     "resource_not_found": PublicFailure(
         "resource_not_found", "The requested resource is not available.", 404, False
     ),
+    "method_not_allowed": PublicFailure(
+        "method_not_allowed", "The request method is not supported for this resource.", 405, False
+    ),
     "request_in_progress": PublicFailure(
         "request_in_progress", "This request is already in progress.", 409, True
     ),
@@ -62,9 +66,6 @@ _FAILURES: dict[str, PublicFailure] = {
         "The request ID was already used with different content.",
         409,
         False,
-    ),
-    "thread_case_conflict": PublicFailure(
-        "thread_case_conflict", "The thread is already bound to another case.", 409, False
     ),
     "conflict": PublicFailure(
         "conflict", "The request conflicts with the current resource state.", 409, False
@@ -134,7 +135,10 @@ def public_failure(error: BaseException) -> PublicFailure:
 
 
 def problem_response(error: BaseException) -> JSONResponse:
-    failure = public_failure(error)
+    return problem_response_for_failure(public_failure(error))
+
+
+def problem_response_for_failure(failure: PublicFailure) -> JSONResponse:
     problem = ProblemDetails(
         type=f"urn:investigation-agent:problem:{failure.code}",
         title=_title(failure.code),
@@ -167,6 +171,13 @@ def install_problem_handlers(app: FastAPI, *, logger: ErrorLogger | None = None)
         del request, error
         return problem_response(_CodeFailure("invalid_request"))
 
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_exception_handler(
+        request: Request, error: StarletteHTTPException
+    ) -> JSONResponse:
+        del request
+        return problem_response_for_failure(_http_failure(error.status_code))
+
     @app.exception_handler(Exception)
     async def _safe_exception_handler(request: Request, error: Exception) -> JSONResponse:
         failure = public_failure(error)
@@ -194,6 +205,19 @@ class _CodeFailure(RuntimeError):
         self.code = code
 
 
+def _http_failure(status_code: int) -> PublicFailure:
+    """Map framework-raised HTTP statuses onto public codes without copying their detail."""
+
+    if status_code == 404:
+        return _FAILURES["resource_not_found"]
+    if status_code == 405:
+        return _FAILURES["method_not_allowed"]
+    if status_code >= 500:
+        return _FAILURES["internal"]
+    invalid = _FAILURES["invalid_request"]
+    return PublicFailure(invalid.code, invalid.message, status_code, False)
+
+
 def _route_template(request: Request) -> str:
     route = request.scope.get("route")
     path = getattr(route, "path", None)
@@ -205,13 +229,14 @@ def _title(code: str) -> str:
         "request_in_progress",
         "thread_busy",
         "idempotency_conflict",
-        "thread_case_conflict",
         "conflict",
         "thread_full",
     }:
         return "Conflict"
     if code == "resource_not_found":
         return "Not Found"
+    if code == "method_not_allowed":
+        return "Method Not Allowed"
     if code in {
         "dependency_unavailable",
         "guardrail_unavailable",
@@ -230,6 +255,7 @@ __all__ = [
     "PublicFailure",
     "install_problem_handlers",
     "problem_response",
+    "problem_response_for_failure",
     "public_failure",
     "public_failure_for_code",
 ]

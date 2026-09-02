@@ -38,9 +38,9 @@ class _SnapshotGraph:
 
 async def _put(saver: Any, thread_id: str) -> None:
     checkpoint = empty_checkpoint()
-    checkpoint["channel_values"] = {"control": {"case_id": "case-a"}, "messages": []}
+    checkpoint["channel_values"] = {"control": {"policy_version": "v1"}, "messages": []}
     checkpoint["channel_versions"] = {"control": "1", "messages": "1"}
-    config = graph_config(thread_id=thread_id, case_id="case-a")
+    config = graph_config(thread_id=thread_id)
     await saver.aput(
         {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}},
         checkpoint,
@@ -82,24 +82,24 @@ async def test_thread_deletion_removes_only_that_thread_and_reads_404_afterwards
 async def test_representative_reads_use_the_expected_indexes(database_pools: DatabasePools) -> None:
     plans = {
         "bm25": (
-            "SELECT c.chunk_id FROM public.chunks c WHERE c.case_id = $1 "
-            "AND c.text @@@ paradedb.match('text', $2, conjunction_mode => true) LIMIT 5",
-            ("case-a", "transfer"),
+            "SELECT c.chunk_id FROM public.chunks c "
+            "WHERE c.text @@@ paradedb.match('text', $1, conjunction_mode => true) LIMIT 5",
+            ("transfer",),
         ),
         "vector": (
-            "SELECT c.chunk_id FROM public.chunks c WHERE c.case_id = $1 "
-            "ORDER BY c.embedding <=> $2::public.vector LIMIT 5",
-            ("case-a", "[1,0,0,0]"),
+            "SELECT c.chunk_id FROM public.chunks c "
+            "ORDER BY c.embedding <=> $1::public.vector LIMIT 5",
+            ("[1,0,0,0]",),
         ),
         "structured": (
-            "SELECT record_id FROM public.transactions WHERE case_id = $1 AND amount_minor >= $2",
-            ("case-a", 100),
+            "SELECT record_id FROM public.transactions WHERE amount_minor >= $1",
+            (100,),
         ),
         "graph": (
             "SELECT relationship_id FROM public.relationships "
-            "WHERE case_id = $1 AND (subject_entity_id = ANY($2::text[]) "
-            "OR object_entity_id = ANY($2::text[]))",
-            ("case-a", ["e-1"]),
+            "WHERE subject_entity_id = ANY($1::text[]) "
+            "OR object_entity_id = ANY($1::text[])",
+            (["e-1"],),
         ),
     }
     explained: dict[str, str] = {}

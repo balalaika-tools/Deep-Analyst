@@ -1,4 +1,4 @@
-"""Agent harness: no tools, structured output, bounded retries on transient failures."""
+"""Agent harness: no tools, structured output, and bounded retryable failures."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from langchain_core.runnables import Runnable
 
 from ingestion.genai.entity_extraction.prompts import SYSTEM_PROMPT
 from ingestion.genai.entity_extraction.schemas import EntityExtraction
-from ingestion.genai.shared.failures import is_transient
+from ingestion.genai.shared.failures import is_retryable
 
 
 def retry_middleware(max_retries: int, *, initial_delay: float = 1.0) -> ModelRetryMiddleware:
     return ModelRetryMiddleware(
         max_retries=max_retries,
-        retry_on=is_transient,
+        retry_on=is_retryable,
         on_failure="error",
         initial_delay=initial_delay,
         backoff_factor=2.0,

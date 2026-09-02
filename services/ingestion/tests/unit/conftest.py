@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from evidence_model import EntityDraft, RelationshipDraft
 from ingestion.adapters.fixtures import cdr, documents, email, extraction
-from ingestion.application.ingest_case import IngestionDependencies, IngestionPlan
+from ingestion.application.ingest_dataset import IngestionDependencies, IngestionPlan
 from ingestion.domain.candidates import EntityCandidate, RelationshipCandidate
 from ingestion.domain.records import SourceBatch
 from ingestion.observability.events import IngestionInstruments
@@ -27,8 +27,6 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
-CASE = "case_trg_001"
 
 
 class FakeSources:
@@ -49,7 +47,7 @@ class FakeSources:
             "email": email.load_emails,
             "docs": documents.load_documents,
         }
-        return loaders[source_system](self._edition_dir, CASE)
+        return loaders[source_system](self._edition_dir)
 
 
 class FakeStore:
@@ -61,7 +59,7 @@ class FakeStore:
         self.entities: list[EntityDraft] = []
         self.relationships: list[RelationshipDraft] = []
         self.runs: dict[str, dict[str, Any]] = {}
-        self.completed: set[tuple[str, str]] = set()
+        self.completed: set[str] = set()
 
     async def persist_source(self, batch: SourceBatch) -> None:
         self.sources.append(batch.source_system)
@@ -77,8 +75,8 @@ class FakeStore:
         self.relationships = sorted(relationships, key=lambda r: r.relationship_id)
         return len(self.entities), len(self.relationships)
 
-    async def has_completed(self, case_id: str, fingerprint: str) -> bool:
-        return (case_id, fingerprint) in self.completed
+    async def has_completed(self, fingerprint: str) -> bool:
+        return fingerprint in self.completed
 
     async def start(self, run: RunStart) -> str:
         run_id = f"run-{len(self.runs) + 1}"
@@ -89,7 +87,7 @@ class FakeStore:
         self, run_id: str, *, completed_at: datetime, summary: dict[str, Any]
     ) -> None:
         self.runs[run_id].update(outcome="completed", summary=summary)
-        self.completed.add((CASE, self.runs[run_id]["fingerprint"]))
+        self.completed.add(self.runs[run_id]["fingerprint"])
 
     async def fail(self, run_id: str, *, completed_at: datetime, error_type: str) -> None:
         self.runs[run_id].update(outcome="failed", error_type=error_type)
@@ -178,7 +176,6 @@ class ScriptedExtractors:
 @pytest.fixture
 def plan(edition_dir: Path) -> IngestionPlan:
     return IngestionPlan(
-        case_id=CASE,
         edition="en",
         edition_dir=edition_dir,
         fingerprint="fp-1",

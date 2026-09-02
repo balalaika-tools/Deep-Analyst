@@ -14,22 +14,20 @@ from dataset.provenance import build_provenance_dags
 
 
 def build_ground_truth(
-    case_id: str,
     ref_catalog: dict[str, dict[str, Any]],
     cdr: list[dict[str, Any]],
     extraction: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    entities = build_entities(case_id)
+    entities = build_entities()
 
     entity_mentions, mention_resolutions, actor_resolution_candidates, mention_source_refs = (
-        build_mentions_and_resolutions(case_id, ref_catalog, cdr, extraction)
+        build_mentions_and_resolutions(ref_catalog, cdr, extraction)
     )
     resolution_decisions = build_resolution_decisions(mention_resolutions)
-    assertions = build_relationship_assertions(case_id, ref_catalog)
-    event_crosswalks = build_event_crosswalks(case_id)
+    assertions = build_relationship_assertions(ref_catalog)
+    event_crosswalks = build_event_crosswalks(ref_catalog)
 
     provenance_dags, provenance_source_refs = build_provenance_dags(
-        case_id,
         ref_catalog,
         assertions,
         event_crosswalks,
@@ -42,7 +40,7 @@ def build_ground_truth(
     comms_dag_id = provenance_dags[1]["dag_id"]
 
     golden_questions, rubric_source_refs = build_golden_questions(
-        case_id, ref_catalog, structuring_dag_id, comms_dag_id
+        ref_catalog, structuring_dag_id, comms_dag_id
     )
 
     forbidden_claims = [
@@ -72,7 +70,6 @@ def build_ground_truth(
             "language": state.ACTIVE_LOCALE,
             "edition_role": "primary" if state.ACTIVE_LOCALE == DEFAULT_LOCALE else "alternate",
             "policy_version": POLICY_VERSION,
-            "case_id": case_id,
             "generated_at": GENERATED_AT,
             "test_only": True,
             "runtime_indexing_allowed": False,

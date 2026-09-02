@@ -44,8 +44,11 @@ class DeleteThread:
         except ThreadAlreadyLockedError:
             raise ThreadBusy from None
         try:
-            config: Mapping[str, Any] = graph_config(thread_id=thread_id, case_id="-")
-            snapshot = await self._graph.aget_state(config)
+            config: Mapping[str, Any] = graph_config(thread_id=thread_id)
+            try:
+                snapshot = await self._graph.aget_state(config)
+            except Exception as exc:
+                raise translate_adapter_error(exc) from None
             if not snapshot.values or not snapshot.values.get("control"):
                 raise ThreadNotFound
             try:

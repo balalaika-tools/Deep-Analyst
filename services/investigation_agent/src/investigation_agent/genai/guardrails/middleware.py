@@ -19,6 +19,7 @@ from investigation_agent.domain.investigation_state import (
 )
 from investigation_agent.domain.tool_outcome import EvidenceItem
 from investigation_agent.genai.guardrails.schemas import (
+    MAX_RENDERED_EVIDENCE_CHARS,
     EvidenceGuardrailVerdict,
     InputGuardrailStatus,
     InputGuardrailVerdict,
@@ -234,13 +235,9 @@ def deterministic_evidence_boundary(
 ) -> tuple[NormalizedEvidence, ...]:
     """Safe deterministic fallback used when the evidence classifier is unavailable."""
 
+    normalized = ((item, normalize_untrusted_text(_visible_text(item))) for item in evidence)
     return tuple(
-        _normalized_evidence(
-            item,
-            normalize_untrusted_text(_visible_text(item)),
-            looks_instruction_like(_visible_text(item)),
-        )
-        for item in evidence
+        _normalized_evidence(item, text, looks_instruction_like(text)) for item, text in normalized
     )
 
 
@@ -249,9 +246,16 @@ def _visible_text(item: EvidenceItem) -> str:
     return "\n".join(part for part in (item.content or "", fields) if part)
 
 
+_RENDERED_TRIM_MARKER = "\n[trimmed]"
+
+
 def _normalized_evidence(item: EvidenceItem, text: str, suspicious: bool) -> NormalizedEvidence:
     label = "suspicious-untrusted-evidence" if suspicious else "untrusted-evidence"
-    rendered = f"<{label} id={item.evidence_id!r}>\n{text}\n</{label}>"
+    opening, closing = f"<{label} id={item.evidence_id!r}>\n", f"\n</{label}>"
+    budget = MAX_RENDERED_EVIDENCE_CHARS - len(opening) - len(closing)
+    if len(text) > budget:
+        text = text[: budget - len(_RENDERED_TRIM_MARKER)] + _RENDERED_TRIM_MARKER
+    rendered = f"{opening}{text}{closing}"
     return NormalizedEvidence(
         evidence_id=item.evidence_id,
         content_hash=item.content_hash,

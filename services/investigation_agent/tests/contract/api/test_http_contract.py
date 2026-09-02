@@ -17,7 +17,6 @@ from investigation_agent.api.routers.threads import router as threads_router
 from investigation_agent.application.invoke_turn import (
     RequestInProgress,
     ThreadBusy,
-    ThreadCaseConflict,
     ThreadNotFound,
 )
 from investigation_agent.application.read_history import (
@@ -43,12 +42,6 @@ class NeverInvoke:
         raise AssertionError("invalid requests must not enter application execution")
 
 
-class ConflictingInvoke:
-    async def prepare(self, body: object) -> None:
-        del body
-        raise ThreadCaseConflict
-
-
 @dataclass
 class RecordingErrorLogger:
     records: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
@@ -69,7 +62,6 @@ class FixedHistory:
             items=(
                 ThreadSummary(
                     thread_id="thread-1",
-                    case_id="case-1",
                     turn_id="turn-1",
                     status=TurnStatus.COMPLETED,
                     created_at=datetime(2026, 4, 5, tzinfo=UTC),
@@ -222,17 +214,17 @@ def test_versioned_problem_details_are_sanitized_and_busy_has_retry_guidance() -
     ]
 
 
-def test_request_validation_is_non_streaming_and_starts_no_turn() -> None:
+def test_removed_scope_field_is_rejected_before_execution() -> None:
     app = _app(readiness_probe=_available)
+    removed_field = "case" + "_id"
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post(
             "/v1/agent/invoke",
             json={
                 "request_id": "request-1",
                 "thread_id": "thread-1",
-                "case_id": "case-1",
-                "message": "   ",
-                "owner_id": "attacker",
+                removed_field: "legacy",
+                "message": "Investigate",
             },
         )
 
@@ -240,26 +232,6 @@ def test_request_validation_is_non_streaming_and_starts_no_turn() -> None:
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["code"] == "invalid_request"
     assert app.state.runtime.invoke_turn.calls == 0
-
-
-def test_case_binding_conflict_is_a_non_streaming_409_problem() -> None:
-    with TestClient(
-        _app(readiness_probe=_available, invoke=ConflictingInvoke()), raise_server_exceptions=False
-    ) as client:
-        response = client.post(
-            "/v1/agent/invoke",
-            json={
-                "request_id": "request-1",
-                "thread_id": "thread-1",
-                "case_id": "case-2",
-                "message": "hello",
-            },
-        )
-
-    assert response.status_code == 409
-    assert response.headers["content-type"].startswith("application/problem+json")
-    assert response.json()["code"] == "thread_case_conflict"
-    assert "retry-after" not in response.headers
 
 
 def test_history_routes_return_only_public_dtos_without_any_identity() -> None:
@@ -272,7 +244,6 @@ def test_history_routes_return_only_public_dtos_without_any_identity() -> None:
         missing = client.get("/v1/threads/thread-9/messages")
 
     assert threads.status_code == 200 and threads.json()["items"][0]["thread_id"] == "thread-1"
-    assert threads.json()["items"][0]["case_id"] == "case-1"
     assert messages.status_code == 200
     assert messages.json()["items"][0] == {
         "message_id": "message-1",
@@ -287,6 +258,8 @@ def test_history_routes_return_only_public_dtos_without_any_identity() -> None:
     }
     assert missing.status_code == 404 and missing.json()["code"] == "resource_not_found"
     payload = f"{threads.text}{messages.text}".lower()
+    removed_field = "case" + "_id"
+    assert removed_field not in payload
     assert all(
         private not in payload for private in ("checkpoint", "sql", "tool", "diagnostic", "owner")
     )

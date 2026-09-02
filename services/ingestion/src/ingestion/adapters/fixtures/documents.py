@@ -43,7 +43,7 @@ def _event_time(front_matter: dict[str, Any]) -> tuple[datetime | None, str | No
     return None, None
 
 
-def _record(case_id: str, path: Path, relative_path: str) -> SourceRecord:
+def _record(path: Path, relative_path: str) -> SourceRecord:
     front_matter, body = split_front_matter(path.read_text(encoding="utf-8"))
     event_time, original = _event_time(front_matter)
     payload = {
@@ -52,7 +52,6 @@ def _record(case_id: str, path: Path, relative_path: str) -> SourceRecord:
     }
     document_id = str(front_matter.get("document_id") or path.stem)
     return SourceRecord(
-        case_id=case_id,
         source_system=SOURCE_SYSTEM,
         source_record_id=document_id,
         record_type="document",
@@ -65,10 +64,9 @@ def _record(case_id: str, path: Path, relative_path: str) -> SourceRecord:
     )
 
 
-def load_documents(edition_dir: Path, case_id: str) -> SourceBatch:
+def load_documents(edition_dir: Path) -> SourceBatch:
     directory = edition_dir / RELATIVE_DIR
     records = [
-        _record(case_id, path, f"{RELATIVE_DIR}/{path.name}")
-        for path in sorted(directory.glob("*.md"))
+        _record(path, f"{RELATIVE_DIR}/{path.name}") for path in sorted(directory.glob("*.md"))
     ]
     return SourceBatch(source_system=SOURCE_SYSTEM, records=records)

@@ -6,12 +6,11 @@ from investigation_agent.genai.record_query.schemas import (
     ServerSchemaDescription,
 )
 
-PROVENANCE_COLUMNS = frozenset({"record_id", "case_id", "content_hash", "source_refs"})
+PROVENANCE_COLUMNS = frozenset({"record_id", "content_hash", "source_refs"})
 
 VIEW_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "transactions_v1": (
         ("record_id", "text"),
-        ("case_id", "text"),
         ("source_system", "text"),
         ("source_record_id", "text"),
         ("source_path", "text"),
@@ -32,7 +31,6 @@ VIEW_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "accounts_v1": (
         ("record_id", "text"),
-        ("case_id", "text"),
         ("source_system", "text"),
         ("source_record_id", "text"),
         ("source_path", "text"),
@@ -47,7 +45,6 @@ VIEW_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "communications_v1": (
         ("record_id", "text"),
-        ("case_id", "text"),
         ("source_system", "text"),
         ("source_record_id", "text"),
         ("source_path", "text"),

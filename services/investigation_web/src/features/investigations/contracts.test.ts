@@ -11,7 +11,6 @@ describe("API contract guards", () => {
         items: [
           {
             thread_id: "thread-1",
-            case_id: "case-1",
             turn_id: "turn-1",
             status: "completed",
             created_at: timestamp,
@@ -47,7 +46,6 @@ describe("API contract guards", () => {
         items: [
           {
             thread_id: "bad id",
-            case_id: "case-1",
             turn_id: "turn-1",
             status: "completed",
             created_at: timestamp,

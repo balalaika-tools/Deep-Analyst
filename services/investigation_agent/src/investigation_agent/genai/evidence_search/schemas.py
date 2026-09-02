@@ -29,7 +29,7 @@ class Constraint(StrictModel):
 
 
 class SearchIntent(StrictModel):
-    """Main-agent-authored intent. Case scope and exclusions come from trusted code."""
+    """Main-agent-authored intent. Exclusions come from trusted code."""
 
     question: Annotated[str, Field(min_length=1, max_length=8_000)]
     objective: Annotated[str, Field(min_length=1, max_length=4_000)]
@@ -91,7 +91,6 @@ class RetrievalModality(StrEnum):
 class RetrievalCandidate(StrictModel):
     chunk_id: Annotated[str, Field(min_length=1, max_length=256)]
     record_id: Annotated[str, Field(min_length=1, max_length=256)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     text: Annotated[str, Field(max_length=32_000)]
     content_hash: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     source_ref: SourceRef
@@ -113,7 +112,6 @@ class ModalityContribution(StrictModel):
 class FusedCandidate(StrictModel):
     chunk_id: Annotated[str, Field(min_length=1, max_length=256)]
     record_id: Annotated[str, Field(min_length=1, max_length=256)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     text: Annotated[str, Field(max_length=32_000)]
     content_hash: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     source_refs: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=4)]
@@ -153,7 +151,6 @@ class SearchAttempt(StrictModel):
 
 class SearchEvidence(StrictModel):
     evidence_id: Annotated[str, Field(min_length=1, max_length=256)]
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     content_hash: Annotated[str, Field(pattern=_SHA256_PATTERN)]
     source_refs: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=4)]
     kind: Literal["chunk"] = "chunk"

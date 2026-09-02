@@ -10,7 +10,6 @@ from dataset.provenance.locators import _assertion_locator
 
 
 def _relationship_assertion(
-    case_id: str,
     ref_catalog: dict[str, dict[str, Any]],
     subject: str,
     predicate: str,
@@ -40,7 +39,6 @@ def _relationship_assertion(
     refs = _source_refs(ref_catalog, supports, locators)
     needs_review = status != "confirmed" or inference_strength == "inferred"
     payload = {
-        "case_id": case_id,
         "subject_entity_id": subject,
         "predicate": predicate,
         "object_entity_id": obj,

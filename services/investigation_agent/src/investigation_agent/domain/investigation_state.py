@@ -24,7 +24,7 @@ from investigation_agent.domain.tool_outcome import (
     canonical_fingerprint,
 )
 
-STATE_SCHEMA_VERSION = 2
+STATE_SCHEMA_VERSION = 3
 EVIDENCE_INDEX_BOUNDED_NOTICE = "evidence_index_bounded"
 
 type ExhaustedLimit = Literal["model_calls", "tool_calls", "elapsed", "recursion"]
@@ -46,7 +46,6 @@ class ControlState(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     state_schema_version: PositiveInt = STATE_SCHEMA_VERSION
     policy_version: Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -89,7 +88,6 @@ class EvidenceCard(BaseModel):
 
     evidence_id: Annotated[str, Field(min_length=1, max_length=256)]
     kind: EvidenceKind
-    case_id: Annotated[str, Field(min_length=1, max_length=128)]
     content_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     source_refs: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=32)]
     evidentiary_status: EvidentiaryStatus
@@ -109,6 +107,7 @@ class EvidenceIndex(BaseModel):
     next_sequence: PositiveInt = 1
     dropped_cards: NonNegativeInt = 0
     coverage_notice: Annotated[str | None, Field(max_length=64)] = None
+    max_cards: PositiveInt | None = None
 
     @model_validator(mode="after")
     def _keys_match_cards(self) -> EvidenceIndex:
@@ -267,11 +266,10 @@ def new_turn_state(
     request_id: str,
     message_id: str,
     utterance: str,
-    case_id: str,
     opened_at: datetime,
 ) -> TurnState:
     request_fingerprint = canonical_fingerprint(
-        {"version": 1, "request_id": request_id, "case_id": case_id, "message": utterance}
+        {"version": 2, "request_id": request_id, "message": utterance}
     )
     return TurnState(
         turn_id=turn_id,
@@ -295,7 +293,6 @@ def evidence_card_from_item(
     return EvidenceCard(
         evidence_id=item.evidence_id,
         kind=item.kind,
-        case_id=item.case_id,
         content_hash=item.content_hash,
         source_refs=item.source_refs,
         evidentiary_status=item.evidentiary_status,
@@ -313,7 +310,6 @@ def upsert_evidence(
     index: EvidenceIndex,
     outcome: ToolOutcome,
     *,
-    case_id: str,
     turn_id: str,
     max_cards: int,
     protected_ids: Iterable[str] = (),
@@ -326,13 +322,9 @@ def upsert_evidence(
 
     if max_cards < 1:
         raise ValueError("evidence index bound must be positive")
-    if outcome.case_id != case_id:
-        raise OutcomeRejectedError("tool outcome case does not match immutable control scope")
     cards = dict(index.cards)
     next_sequence = index.next_sequence
     for item in sorted(outcome.evidence, key=lambda entry: entry.evidence_id):
-        if item.case_id != case_id:
-            raise OutcomeRejectedError(f"evidence {item.evidence_id!r} crossed case scope")
         if any(not ref.record_id for ref in item.source_refs):
             raise OutcomeRejectedError(f"evidence {item.evidence_id!r} has an empty reference")
         if item.evidence_id in cards:
@@ -348,12 +340,16 @@ def upsert_evidence(
         protected = set(protected_ids) | {
             card.evidence_id for card in cards.values() if card.first_seen_turn_id == turn_id
         }
-        removable = sorted(
+        preferred = sorted(
             (card for card in cards.values() if card.evidence_id not in protected),
             key=lambda card: (card.sequence, card.evidence_id),
         )
+        fallback = sorted(
+            (card for card in cards.values() if card.evidence_id in protected),
+            key=lambda card: (card.sequence, card.evidence_id),
+        )
         excess = len(cards) - max_cards
-        for card in removable[:excess]:
+        for card in (preferred + fallback)[:excess]:
             del cards[card.evidence_id]
             dropped += 1
         notice = EVIDENCE_INDEX_BOUNDED_NOTICE
@@ -362,6 +358,7 @@ def upsert_evidence(
         next_sequence=next_sequence,
         dropped_cards=dropped,
         coverage_notice=notice,
+        max_cards=max_cards,
     )
 
 

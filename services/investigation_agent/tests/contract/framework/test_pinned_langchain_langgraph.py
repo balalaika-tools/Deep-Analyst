@@ -79,7 +79,7 @@ def _tool_call(name: str, args: dict[str, Any], identifier: str) -> dict[str, An
 def _domain_tool(executions: list[str]) -> BaseTool:
     @tool
     def search_evidence(query: str) -> str:
-        """Search case-scoped evidence."""
+        """Search global evidence."""
         executions.append(query)
         return "tool result"
 

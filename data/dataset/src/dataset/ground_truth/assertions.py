@@ -6,12 +6,9 @@ from typing import Any
 from dataset.provenance import _relationship_assertion
 
 
-def build_relationship_assertions(
-    case_id: str, ref_catalog: dict[str, dict[str, Any]]
-) -> list[dict[str, Any]]:
+def build_relationship_assertions(ref_catalog: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_mavridis_a",
             "USES",
@@ -22,7 +19,6 @@ def build_relationship_assertions(
             method="document_statement",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_sofia",
             "USES",
@@ -35,7 +31,6 @@ def build_relationship_assertions(
             valid_to="2026-02-21T09:30:00Z",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_rossi",
             "USES",
@@ -46,7 +41,6 @@ def build_relationship_assertions(
             method="document_signature_and_envelope",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_rossi",
             "ASSOCIATED_WITH",
@@ -57,7 +51,6 @@ def build_relationship_assertions(
             method="address_header_and_signed_message",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_rossi",
             "DIRECTOR_OF",
@@ -69,7 +62,6 @@ def build_relationship_assertions(
             valid_from="2026-01-15T00:00:00Z",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_rossi",
             "ASSOCIATED_WITH",
@@ -81,7 +73,6 @@ def build_relationship_assertions(
             identity_status="proposed",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_mavridis_d",
             "USES",
@@ -92,7 +83,6 @@ def build_relationship_assertions(
             method="document_statement",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_mavridis_d",
             "KIN_OF",
@@ -104,7 +94,6 @@ def build_relationship_assertions(
             valid_from="2026-03-06T00:00:00Z",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_mavridis_d",
             "EMPLOYED_BY",
@@ -115,7 +104,6 @@ def build_relationship_assertions(
             method="employment_email_and_salary_transfer",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_papadakis_n2",
             "USES",
@@ -126,7 +114,6 @@ def build_relationship_assertions(
             method="receipt_statement",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_org_aegean",
             "ASSOCIATED_WITH",
@@ -137,7 +124,6 @@ def build_relationship_assertions(
             method="sar_statement",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_org_logistiki_b1",
             "ASSOCIATED_WITH",
@@ -148,7 +134,6 @@ def build_relationship_assertions(
             method="email_signature",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_account_meridian",
             "HELD_BY",
@@ -159,7 +144,6 @@ def build_relationship_assertions(
             method="registry_and_account_extract",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_account_aegean",
             "HELD_BY",
@@ -170,7 +154,6 @@ def build_relationship_assertions(
             method="structured_account_holder",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_person_mavridis_a",
             "ASSOCIATED_WITH",
@@ -182,7 +165,6 @@ def build_relationship_assertions(
             identity_status="proposed",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_org_aegean",
             "PAID",
@@ -195,7 +177,6 @@ def build_relationship_assertions(
             valid_to="2026-03-04T10:05:00Z",
         ),
         _relationship_assertion(
-            case_id,
             ref_catalog,
             "ent_org_aegean",
             "PAID",

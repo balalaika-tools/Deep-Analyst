@@ -29,7 +29,6 @@ export interface Citation {
 
 export interface ThreadSummary {
   thread_id: string;
-  case_id: string;
   turn_id: string;
   status: TurnStatus;
   created_at: string;
@@ -70,7 +69,6 @@ export interface ProblemDetails {
 export interface InvokeRequest {
   request_id: string;
   thread_id: string;
-  case_id: string;
   message: string;
 }
 
@@ -222,13 +220,12 @@ export function isThreadPage(value: unknown): value is ThreadPage {
 function isThreadSummary(value: unknown): value is ThreadSummary {
   if (
     !isObject(value) ||
-    !hasOnlyKeys(value, ["thread_id", "case_id", "turn_id", "status", "created_at"])
+    !hasOnlyKeys(value, ["thread_id", "turn_id", "status", "created_at"])
   ) {
     return false;
   }
   return (
     isId(value.thread_id) &&
-    isId(value.case_id) &&
     isId(value.turn_id) &&
     TURN_STATUSES.has(value.status as TurnStatus) &&
     isTimestamp(value.created_at)

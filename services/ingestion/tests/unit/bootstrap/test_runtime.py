@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 from ingestion.adapters.fixtures.manifest import parse_manifest
 from ingestion.adapters.s3.evidence_bucket import EvidenceBucket
-from ingestion.application.ingest_case import IngestionDependencies, IngestionPlan, RunOutcome
+from ingestion.application.ingest_dataset import IngestionDependencies, IngestionPlan, RunOutcome
 from ingestion.bootstrap.runtime import RuntimeFactories, build_plan, run
 from ingestion.config.settings import Settings
 from observability import ObservabilityConfig, Providers
@@ -150,7 +150,7 @@ async def test_successful_run_exits_zero_with_outcome_on_the_root_span(
     exit_code = await run(_settings(), recorder.factories(ingest))
 
     assert exit_code == 0 and recorder.engine.disposed
-    assert seen["plan"].case_id == "case_trg_001" and seen["plan"].edition == "en"
+    assert seen["plan"].edition == "en"
     assert seen["deps"].embedder.dimensions == 8
     assert recorder.bucket.materializations == 0, "raw evidence remains lazy until a source loads"
     (span,) = recorder.exporter.get_finished_spans()
