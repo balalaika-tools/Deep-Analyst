@@ -8,9 +8,9 @@ source file to a cited sentence in the analyst's answer. [Data Layer](data-layer
 
 ## The picture
 
-<a href="diagrams/arch-diagram/deep-analyst-architecture.html"><img alt="Deep Analyst architecture: three source families flow through an ingestion pipeline into an evidence graph database, which the investigation runtime reads through three read-only tools to answer analyst questions in a Next.js chat UI, with Langfuse observing the agent and pipeline traces." src="diagrams/arch-diagram/deep-analyst-architecture.visual-check.2048x1320.light.png"></a>
+<a href="diagrams/arch-diagram/deep-analyst-architecture.visual-check.2048x1320.light.png"><img alt="Deep Analyst architecture: three source families flow through an ingestion pipeline into an evidence graph database, which the investigation runtime reads through three read-only tools to answer analyst questions in a Next.js chat UI, with Langfuse observing the agent and pipeline traces." src="diagrams/arch-diagram/deep-analyst-architecture.visual-check.2048x1320.light.png"></a>
 
-Click the diagram to open the interactive version (pan, zoom, light/dark) in the browser.
+Click the diagram to open the full-size image. The [interactive version](diagrams/arch-diagram/deep-analyst-architecture.html) (pan, zoom, light/dark) is also available in the browser.
 
 Three source families — communications, financial data, and documents — go through an **ingestion
 pipeline** once, on startup. Ingestion writes everything to one **evidence graph database**

@@ -82,7 +82,9 @@ agent state**: immutable control, a bounded evidence index, and one replaceable 
 The next turn receives what matters, what remains open, and which evidence supports it — even after
 a process restart or when another API replica handles the request.
 
-<a href="diagrams/arch-diagram/deep-analyst-architecture.html"><img alt="Carry custom agent state forward, not the full conversation" src="diagrams/arch-diagram/deep-analyst-architecture.visual-check.2048x1320.light.png"></a>
+<a href="diagrams/agent-memory/agent-memory.visual-check.2048x1320.light.png"><img alt="Carry custom agent state forward, not the full conversation" src="diagrams/agent-memory/agent-memory.visual-check.2048x1320.light.png"></a>
+
+Click the diagram to open the full-size image. The [interactive version](diagrams/agent-memory/agent-memory.html) (pan, zoom, light/dark) is also available in the browser.
 
 ### Three parts, each with one job
 
