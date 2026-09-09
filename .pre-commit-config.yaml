@@ -53,7 +53,7 @@ repos:
 
       - id: pytest
         name: pytest (non-integration, non-live)
-        entry: uv run --locked pytest -m "not integration and not live" --no-cov
+        entry: uv run --locked pytest -m "not integration and not live"
         language: system
         pass_filenames: false
         always_run: true

@@ -12,8 +12,7 @@ from langchain_core.messages import AnyMessage, ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from investigation_agent.core.context import RuntimeContext
-from investigation_agent.core.errors import BudgetExhaustedFailure
+from investigation_agent.core.context import ExecutionDeadlineExceeded, RuntimeContext
 from investigation_agent.domain.investigation_state import UsageCounters, upsert_evidence
 from investigation_agent.domain.tool_outcome import BudgetConsumption, OutcomeStatus, ToolOutcome
 from investigation_agent.genai.guardrails.middleware import deterministic_evidence_boundary
@@ -22,8 +21,7 @@ from investigation_agent.genai.investigation.middleware.contracts import (
     EvidenceGuard,
     require_state,
 )
-from investigation_agent.genai.shared.retries import (
-    OperationCancelledError,
+from investigation_agent.genai.shared.retry import (
     TransientExhaustedError,
 )
 
@@ -109,11 +107,11 @@ class EvidenceIndexMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
         try:
             context.check_active()
             return await handler(request)
-        except (asyncio.CancelledError, OperationCancelledError):
+        except asyncio.CancelledError:
             raise
         except TransientExhaustedError:
             return self._failed(tool_call_id, tool_name, OutcomeStatus.TRANSIENT_EXHAUSTED)
-        except (TimeoutError, BudgetExhaustedFailure):
+        except (TimeoutError, ExecutionDeadlineExceeded):
             return self._failed(tool_call_id, tool_name, OutcomeStatus.BUDGET_EXHAUSTED)
         except Exception:
             return self._failed(tool_call_id, tool_name, OutcomeStatus.DEPENDENCY_UNAVAILABLE)
@@ -147,7 +145,7 @@ class EvidenceIndexMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
             return deterministic_evidence_boundary(outcome.evidence), BudgetConsumption(), ()
         try:
             verdict = await self._guard(outcome.evidence, context)
-        except (asyncio.CancelledError, OperationCancelledError):
+        except asyncio.CancelledError:
             raise
         except Exception as exc:
             attempts = getattr(exc, "attempts", 0)

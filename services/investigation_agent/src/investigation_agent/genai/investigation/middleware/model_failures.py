@@ -12,8 +12,7 @@ from langchain.agents.structured_output import StructuredOutputValidationError
 from langchain_core.messages import AIMessage
 
 from investigation_agent.core.context import RuntimeContext
-from investigation_agent.genai.shared.retries import (
-    OperationCancelledError,
+from investigation_agent.genai.shared.retry import (
     TransientExhaustedError,
     is_transient_error,
 )
@@ -44,7 +43,7 @@ class ModelFailureMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
         try:
             request.runtime.context.check_active()
             return await handler(request)
-        except (asyncio.CancelledError, OperationCancelledError):
+        except asyncio.CancelledError:
             raise
         except StructuredOutputValidationError as exc:
             return _invalid_draft_response(exc)

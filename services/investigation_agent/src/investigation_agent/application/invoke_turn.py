@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import threading
-import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -18,8 +16,7 @@ from investigation_agent.application.thread_locks import (
     ThreadLease,
     ThreadLockRegistry,
 )
-from investigation_agent.core.context import RuntimeContext
-from investigation_agent.core.errors import IncompatibleStateFailure, translate_adapter_error
+from investigation_agent.core.context import CancellationController, RuntimeContext
 from investigation_agent.domain.history import (
     HistoryRole,
     TurnStatus,
@@ -29,17 +26,15 @@ from investigation_agent.domain.history import (
 )
 from investigation_agent.domain.investigation_state import (
     ControlState,
-    IncompatibleStateError,
     InvestigationState,
     TurnState,
     new_turn_state,
-    parse_state,
     state_update,
 )
 from investigation_agent.domain.tool_outcome import canonical_fingerprint
+from investigation_agent.ports.investigator import Investigator
 
 _ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
-APP_METADATA = "investigation"
 
 
 class InvokeRequest(BaseModel):
@@ -106,100 +101,19 @@ class MessageTooLarge(RuntimeError):
     retryable = False
 
 
-@runtime_checkable
-class GraphSnapshot(Protocol):
-    @property
-    def values(self) -> Mapping[str, Any]: ...
-
-
-@runtime_checkable
-class InvocationGraph(Protocol):
-    async def aget_state(self, config: Mapping[str, object]) -> GraphSnapshot: ...
-
-    def astream(
-        self,
-        input: Mapping[str, Any] | None,
-        config: Mapping[str, object],
-        *,
-        context: RuntimeContext,
-        stream_mode: list[str],
-        durability: str,
-        version: str,
-    ) -> AsyncIterator[object]: ...
-
-
-@dataclass(slots=True, eq=False)
-class CancellationController:
-    """Thread-safe cooperative cancellation shared across transport and graph work."""
-
-    _event: threading.Event
-
-    @classmethod
-    def create(cls) -> CancellationController:
-        return cls(threading.Event())
-
-    @property
-    def cancelled(self) -> bool:
-        return self._event.is_set()
-
-    def cancel(self) -> None:
-        self._event.set()
-
-    def check(self) -> None:
-        if self.cancelled:
-            raise asyncio.CancelledError
-
-
 @dataclass(frozen=True, slots=True)
 class InvocationPolicy:
     policy_version: str
     max_message_chars: int
     turn_timeout_s: float
     max_history_turns: int
-    recursion_limit: int = 200
+    max_agent_steps: int = 200
 
     def __post_init__(self) -> None:
         if not self.policy_version or self.max_message_chars < 1 or self.turn_timeout_s <= 0:
             raise ValueError("invocation policy values must be positive and non-empty")
-        if self.max_history_turns < 1 or self.recursion_limit < 1:
-            raise ValueError("history and recursion bounds must be positive")
-
-
-class AttemptTelemetryLike(Protocol):
-    """The subset of attempt telemetry the transport drives; ``None`` disables tracing."""
-
-    def trace_carrier(self) -> dict[str, str]: ...
-
-    def record_first_safe_progress(self) -> None: ...
-
-    def record_answer_ready(self) -> None: ...
-
-    def record_first_public_delta(self) -> None: ...
-
-    def finish(self, *, outcome: str = "success") -> None: ...
-
-    def fail(self, exc: BaseException | None, *, failure_class: Any = "internal") -> None: ...
-
-    def cancel(self) -> None: ...
-
-    def trace_stream(self, source: Any) -> Any: ...
-
-    def activate(self) -> Any: ...
-
-    @property
-    def closed(self) -> bool: ...
-
-
-class AttemptTelemetryFactoryLike(Protocol):
-    def create(
-        self,
-        *,
-        thread_id: str,
-        turn_id: str,
-        attempt: int,
-        prior_trace_carrier: Mapping[str, str] | None,
-        api_started_at: float | None = None,
-    ) -> AttemptTelemetryLike: ...
+        if self.max_history_turns < 1 or self.max_agent_steps < 1:
+            raise ValueError("history and agent-step bounds must be positive")
 
 
 @dataclass(slots=True)
@@ -210,14 +124,15 @@ class PreparedTurn:
     thread_id: str
     turn_id: str
     request_id: str
-    graph: InvocationGraph
-    config: Mapping[str, object]
+    investigator: Investigator
     context: RuntimeContext
     graph_input: Mapping[str, Any] | None
     lease: ThreadLease
     turn_timeout_s: float
+    max_steps: int
+    attempt: int
+    prior_trace_carrier: Mapping[str, str] | None
     replay_state: InvestigationState | None = None
-    telemetry: AttemptTelemetryLike | None = None
 
     @property
     def cancellation(self) -> CancellationController:
@@ -229,13 +144,11 @@ class PreparedTurn:
     async def graph_events(self) -> AsyncIterator[object]:
         if self.kind in {PreparedTurnKind.REPLAY_COMPLETED, PreparedTurnKind.REPLAY_FAILED}:
             return
-        events = self.graph.astream(
+        events = self.investigator.stream_turn(
             self.graph_input,
-            self.config,
+            thread_id=self.thread_id,
             context=self.context,
-            stream_mode=["updates", "custom"],
-            durability="sync",
-            version="v2",
+            max_steps=self.max_steps,
         ).__aiter__()
         deadline = asyncio.get_running_loop().time() + self.turn_timeout_s
         while True:
@@ -251,7 +164,7 @@ class PreparedTurn:
     async def latest_state(self) -> InvestigationState:
         if self.replay_state is not None:
             return self.replay_state
-        state = parse_state((await self.graph.aget_state(self.config)).values)
+        state = await self.investigator.load_state(self.thread_id)
         if state is None:
             raise RuntimeError("checkpoint state is unavailable")
         return state
@@ -266,17 +179,15 @@ class InvokeTurn:
     def __init__(
         self,
         *,
-        graph: InvocationGraph,
+        investigator: Investigator,
         locks: ThreadLockRegistry,
         policy: InvocationPolicy,
         clock: Callable[[], datetime] | None = None,
-        telemetry: AttemptTelemetryFactoryLike | None = None,
     ) -> None:
-        self._graph = graph
+        self._investigator = investigator
         self._locks = locks
         self._policy = policy
         self._clock = clock or (lambda: datetime.now(UTC))
-        self._telemetry = telemetry
         self._active: set[CancellationController] = set()
 
     async def prepare(self, request: InvokeRequest) -> PreparedTurn:
@@ -307,21 +218,10 @@ class InvokeTurn:
         return len(self._active)
 
     async def _prepare_locked(self, *, request: InvokeRequest, lease: ThreadLease) -> PreparedTurn:
-        config = graph_config(
-            thread_id=request.thread_id,
-            recursion_limit=self._policy.recursion_limit,
-        )
-        try:
-            state = parse_state((await self._graph.aget_state(config)).values)
-        except IncompatibleStateError:
-            raise IncompatibleStateFailure from None
-        except Exception as exc:
-            raise translate_adapter_error(exc) from None
+        state = await self._investigator.load_state(request.thread_id)
         kind, graph_input, replay_state = self._resolve_action(state=state, request=request)
         turn_id = stable_turn_id(request.thread_id, request.request_id)
-        telemetry = self._attempt_telemetry(kind, state=state, request=request, turn_id=turn_id)
-        if telemetry is not None and graph_input is not None:
-            graph_input = _with_trace_carrier(graph_input, telemetry.trace_carrier())
+        attempt, prior_trace_carrier = _attempt_link(kind, state)
         cancellation = CancellationController.create()
         context = RuntimeContext(
             thread_id=request.thread_id,
@@ -336,39 +236,15 @@ class InvokeTurn:
             thread_id=request.thread_id,
             turn_id=turn_id,
             request_id=request.request_id,
-            graph=self._graph,
-            config=config,
+            investigator=self._investigator,
             context=context,
             graph_input=graph_input,
             lease=lease_with_cleanup,  # type: ignore[arg-type]
             turn_timeout_s=self._policy.turn_timeout_s,
-            replay_state=replay_state,
-            telemetry=telemetry,
-        )
-
-    def _attempt_telemetry(
-        self,
-        kind: PreparedTurnKind,
-        *,
-        state: InvestigationState | None,
-        request: InvokeRequest,
-        turn_id: str,
-    ) -> AttemptTelemetryLike | None:
-        """One finite root per agent invocation; a resume links to the prior attempt's context."""
-
-        if self._telemetry is None or kind not in (PreparedTurnKind.NEW, PreparedTurnKind.RESUME):
-            return None
-        prior: dict[str, str] | None = None
-        attempt = 1
-        if kind is PreparedTurnKind.RESUME and state is not None and state.turn is not None:
-            prior = dict(state.turn.prior_trace_carrier) or None
-            attempt = 2
-        return self._telemetry.create(
-            thread_id=request.thread_id,
-            turn_id=turn_id,
+            max_steps=self._policy.max_agent_steps,
             attempt=attempt,
-            prior_trace_carrier=prior,
-            api_started_at=time.perf_counter(),
+            prior_trace_carrier=prior_trace_carrier,
+            replay_state=replay_state,
         )
 
     def _resolve_action(
@@ -479,14 +355,14 @@ def _prior_turn_from_history(state: InvestigationState, request: InvokeRequest) 
     )
 
 
-def _with_trace_carrier(
-    graph_input: Mapping[str, Any], carrier: Mapping[str, str]
-) -> dict[str, Any]:
-    payload = dict(graph_input)
-    turn = dict(payload.get("turn") or {})
-    turn["prior_trace_carrier"] = [[key, value] for key, value in sorted(carrier.items())]
-    payload["turn"] = turn
-    return payload
+def _attempt_link(
+    kind: PreparedTurnKind, state: InvestigationState | None
+) -> tuple[int, Mapping[str, str] | None]:
+    if kind is PreparedTurnKind.NEW:
+        return 1, None
+    if kind is PreparedTurnKind.RESUME and state is not None and state.turn is not None:
+        return 2, dict(state.turn.prior_trace_carrier) or None
+    return 0, None
 
 
 def request_fingerprint(request: InvokeRequest) -> str:
@@ -499,25 +375,10 @@ def request_fingerprint(request: InvokeRequest) -> str:
     )
 
 
-def graph_config(*, thread_id: str, recursion_limit: int = 200) -> dict[str, Any]:
-    """Public thread ID is the saver thread ID; metadata supports thread listing."""
-
-    return {
-        "configurable": {"thread_id": thread_id},
-        "metadata": {"app": APP_METADATA, "public_thread_id": thread_id},
-        "recursion_limit": recursion_limit,
-    }
-
-
 __all__ = [
-    "APP_METADATA",
-    "AttemptTelemetryFactoryLike",
-    "AttemptTelemetryLike",
     "CancellationController",
-    "GraphSnapshot",
     "IdempotencyConflict",
     "InvocationConflict",
-    "InvocationGraph",
     "InvocationPolicy",
     "InvokeRequest",
     "InvokeTurn",
@@ -528,7 +389,6 @@ __all__ = [
     "ThreadBusy",
     "ThreadFull",
     "ThreadNotFound",
-    "graph_config",
     "request_fingerprint",
     "stable_message_id",
     "stable_turn_id",

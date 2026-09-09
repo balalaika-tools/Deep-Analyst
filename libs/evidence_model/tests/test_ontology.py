@@ -1,6 +1,8 @@
 import pytest
 from evidence_model import (
     ALLOWED_ENDPOINTS,
+    PREDICATE_DESCRIPTIONS,
+    RELATIONSHIP_STATUS_DESCRIPTIONS,
     EntityType,
     ExtractionMethod,
     OntologyViolation,
@@ -15,6 +17,8 @@ from evidence_model import (
 def test_every_predicate_declares_at_least_one_endpoint_pair() -> None:
     assert set(ALLOWED_ENDPOINTS) == set(Predicate)
     assert all(ALLOWED_ENDPOINTS[predicate] for predicate in Predicate)
+    assert set(PREDICATE_DESCRIPTIONS) == set(Predicate)
+    assert set(RELATIONSHIP_STATUS_DESCRIPTIONS) == set(RelationshipStatus)
 
 
 def test_held_by_from_a_phone_is_rejected() -> None:

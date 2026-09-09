@@ -11,6 +11,9 @@ from investigation_agent.genai.investigation.prompts import (
     MAIN_SYSTEM_PROMPT,
     STRUCTURED_ANSWER_INSTRUCTION,
 )
+from investigation_agent.genai.investigation.tools.find_connections import (
+    FIND_CONNECTIONS_TOOL_DESCRIPTION,
+)
 from investigation_agent.genai.record_query.prompts import QUERY_AGENT_SYSTEM_PROMPT
 from investigation_agent.genai.state_projection.prompts import (
     PROJECTION_REPAIR_PROMPT,
@@ -60,3 +63,22 @@ def test_nested_agent_prompts_keep_structured_output_and_provenance_boundaries()
     assert "Project `record_id`, `content_hash`, and `source_refs`" in QUERY_AGENT_SYSTEM_PROMPT
     assert "Return only the structured projection" in PROJECTION_SYSTEM_PROMPT
     assert "every referenced ID is available" in normalized(PROJECTION_SYSTEM_PROMPT)
+
+
+def test_main_prompt_explains_safe_graph_tool_routing() -> None:
+    prompt = normalized(MAIN_SYSTEM_PROMPT)
+
+    assert "exact entity IDs already exposed" in prompt
+    assert "Prefer confirmed relationships" in prompt
+    assert "stored subject-to-object direction" in prompt
+    assert "terminal entity-type filter" in prompt
+
+
+def test_graph_tool_description_explains_operational_contract() -> None:
+    description = normalized(FIND_CONNECTIONS_TOOL_DESCRIPTION)
+
+    assert "exact entity IDs" in description
+    assert "never pass names or invented IDs" in description
+    assert "subject-to-object meaning" in description
+    assert "confirmed relationships by default" in description
+    assert "terminal entity types" in description

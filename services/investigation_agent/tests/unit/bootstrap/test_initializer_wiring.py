@@ -34,7 +34,7 @@ def test_initializer_bootstrap_passes_only_validated_owner_secrets(
         captured.update(kwargs)
 
     monkeypatch.setattr(
-        "investigation_agent.adapters.postgres.initializer.initialize_database",
+        "investigation_agent.db.initializer.initialize_database",
         fake_initialize_database,
     )
     secrets = InitializerSecrets(

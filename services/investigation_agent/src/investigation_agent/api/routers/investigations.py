@@ -13,9 +13,11 @@ from investigation_agent.api.dependencies import (
     get_sse_chunk_chars,
     get_sse_heartbeat_s,
     get_sse_shutdown_grace_s,
+    get_turn_observer,
 )
 from investigation_agent.api.sse import heartbeat, stream_prepared_turn
 from investigation_agent.application.invoke_turn import InvokeRequest, InvokeTurn
+from investigation_agent.observability.turn_observation import TurnObserver
 
 router = APIRouter(prefix="/v1/agent", tags=["investigations"])
 
@@ -28,13 +30,17 @@ async def invoke(
     chunk_chars: Annotated[int, Depends(get_sse_chunk_chars)],
     heartbeat_s: Annotated[float, Depends(get_sse_heartbeat_s)],
     shutdown_grace_s: Annotated[float, Depends(get_sse_shutdown_grace_s)],
+    observer: Annotated[TurnObserver | None, Depends(get_turn_observer)],
 ) -> EventSourceResponse:
     prepared = await service.prepare(body)
     # sse-starlette cancels every open stream the moment uvicorn receives SIGTERM, before the
     # lifespan drain runs; the grace period keeps in-flight turns alive for the shutdown budget.
     return EventSourceResponse(
         stream_prepared_turn(
-            prepared, chunk_chars=chunk_chars, disconnected=request.is_disconnected
+            prepared,
+            chunk_chars=chunk_chars,
+            observer=observer,
+            disconnected=request.is_disconnected,
         ),
         ping=max(1, math.ceil(heartbeat_s)),
         ping_message_factory=heartbeat,

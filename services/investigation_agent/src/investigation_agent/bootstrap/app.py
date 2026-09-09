@@ -139,7 +139,7 @@ def run_serving(settings: Settings, secrets: ServingSecrets) -> int:
 def run_initializer(settings: Settings, secrets: InitializerSecrets) -> int:
     """Run the owner-only one-shot initializer after all configuration is validated."""
 
-    from investigation_agent.adapters.postgres.initializer import initialize_database
+    from investigation_agent.db.initializer import initialize_database
 
     asyncio.run(
         initialize_database(

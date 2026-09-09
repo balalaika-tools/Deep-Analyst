@@ -11,8 +11,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import psycopg
 import pytest
 import pytest_asyncio
-from investigation_agent.adapters.postgres.initializer import initialize_database
-from investigation_agent.adapters.postgres.pools import (
+from investigation_agent.db.initializer import initialize_database
+from investigation_agent.db.pools import (
     DatabasePools,
     PoolBounds,
     create_database_pools,

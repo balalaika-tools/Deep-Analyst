@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
-from investigation_agent.core.errors import BudgetExhaustedFailure
+
+class ExecutionDeadlineExceeded(RuntimeError):
+    code = "budget_exhausted"
 
 
 @runtime_checkable
@@ -17,6 +21,28 @@ class CancellationSignal(Protocol):
     def cancelled(self) -> bool: ...
 
     def check(self) -> None: ...
+
+
+@dataclass(slots=True, eq=False)
+class CancellationController:
+    """Thread-safe cancellation source shared by transport and execution boundaries."""
+
+    _event: threading.Event
+
+    @classmethod
+    def create(cls) -> CancellationController:
+        return cls(threading.Event())
+
+    @property
+    def cancelled(self) -> bool:
+        return self._event.is_set()
+
+    def cancel(self) -> None:
+        self._event.set()
+
+    def check(self) -> None:
+        if self.cancelled:
+            raise asyncio.CancelledError
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +75,12 @@ class RuntimeContext:
     def check_active(self, *, now: datetime | None = None) -> None:
         self.cancellation.check()
         if self.remaining_seconds(now=now) <= 0:
-            raise BudgetExhaustedFailure()
+            raise ExecutionDeadlineExceeded
 
 
-__all__ = ["CancellationSignal", "RuntimeContext"]
+__all__ = [
+    "CancellationController",
+    "CancellationSignal",
+    "ExecutionDeadlineExceeded",
+    "RuntimeContext",
+]

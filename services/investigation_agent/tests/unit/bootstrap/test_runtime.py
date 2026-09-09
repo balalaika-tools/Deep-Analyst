@@ -5,12 +5,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from investigation_agent.bootstrap.runtime import RuntimeFactories, build_runtime
+from investigation_agent.bootstrap.runtime import ModelClients, RuntimeFactories, build_runtime
 from investigation_agent.config.secrets import ServingSecrets
 from investigation_agent.config.settings import Settings
-from investigation_agent.core.context import RuntimeContext
-from investigation_agent.core.errors import BudgetExhaustedFailure
-from investigation_agent.genai.shared.llm import ModelClients
+from investigation_agent.core.context import ExecutionDeadlineExceeded, RuntimeContext
+from investigation_agent.genai.investigation.investigator import LangGraphInvestigator
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -121,6 +120,7 @@ async def test_runtime_composes_with_fakes_without_provider_or_database_clients(
 
     assert pools.reader.opened == 1 and pools.writer.opened == 1
     assert runtime.checkpointer is saver
+    assert isinstance(runtime.investigator, LangGraphInvestigator)
     assert {t for t in runtime.agent.nodes["tools"].bound.tools_by_name} == {
         "search_evidence",
         "query_records",
@@ -145,5 +145,5 @@ def test_runtime_context_carries_only_trusted_scope_deadline_and_cancellation() 
     assert not hasattr(context, "owner_id") and not hasattr(context, "principal")
     assert context.remaining_seconds(now=now) == 5
     context.check_active(now=now)
-    with pytest.raises(BudgetExhaustedFailure):
+    with pytest.raises(ExecutionDeadlineExceeded):
         context.check_active(now=now + timedelta(seconds=5))

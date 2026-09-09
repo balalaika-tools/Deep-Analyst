@@ -4,28 +4,18 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Protocol
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from investigation_agent.application.invoke_turn import (
-    APP_METADATA,
-    GraphSnapshot,
-    InvocationGraph,
-    ThreadNotFound,
-    graph_config,
-)
+from investigation_agent.application.invoke_turn import ThreadNotFound
 from investigation_agent.application.thread_locks import ThreadLockRegistry
-from investigation_agent.core.errors import IncompatibleStateFailure, translate_adapter_error
 from investigation_agent.domain.history import Citation, HistoryMessage, HistoryRole, TurnStatus
-from investigation_agent.domain.investigation_state import (
-    IncompatibleStateError,
-    InvestigationState,
-    parse_state,
-)
+from investigation_agent.domain.investigation_state import InvestigationState
+from investigation_agent.ports.checkpoints import ThreadStateReader
+from investigation_agent.ports.investigator import Investigator
 
 type CursorValue = str | int
 
@@ -34,25 +24,6 @@ class InvalidCursor(RuntimeError):
     code = "invalid_cursor"
     public_message = "The pagination cursor is invalid."
     retryable = False
-
-
-class CheckpointRecord(Protocol):
-    @property
-    def checkpoint(self) -> Mapping[str, object]: ...
-
-    @property
-    def metadata(self) -> Mapping[str, object]: ...
-
-
-class CheckpointReader(Protocol):
-    def alist(
-        self,
-        config: Mapping[str, object] | None,
-        *,
-        filter: Mapping[str, object] | None = None,
-        before: Mapping[str, object] | None = None,
-        limit: int | None = None,
-    ) -> AsyncIterator[CheckpointRecord]: ...
 
 
 class CursorCodec:
@@ -150,14 +121,14 @@ class ReadHistory:
     def __init__(
         self,
         *,
-        graph: InvocationGraph,
-        checkpointer: CheckpointReader,
+        investigator: Investigator,
+        store: ThreadStateReader,
         locks: ThreadLockRegistry,
         cursors: CursorCodec,
         policy: HistoryReadPolicy,
     ) -> None:
-        self._graph = graph
-        self._checkpointer = checkpointer
+        self._investigator = investigator
+        self._store = store
         self._locks = locks
         self._cursors = cursors
         self._policy = policy
@@ -168,18 +139,13 @@ class ReadHistory:
         size = self._bounded_size(page_size)
         after = self._decode_thread_cursor(cursor)
         newest: dict[str, tuple[datetime, InvestigationState]] = {}
-        records = self._checkpointer.alist(
-            None, filter={"app": APP_METADATA}, limit=self._policy.max_checkpoint_scan
-        )
+        records = self._store.scan_threads(limit=self._policy.max_checkpoint_scan)
         async for record in records:
-            thread_id = _metadata_string(record.metadata, "public_thread_id")
-            state = _state_from_checkpoint(record)
-            if thread_id is None or state is None or state.turn is None:
+            if record.state.turn is None:
                 continue
-            checkpoint_at = _checkpoint_timestamp(record, state=state)
-            current = newest.get(thread_id)
-            if current is None or checkpoint_at > current[0]:
-                newest[thread_id] = (checkpoint_at, state)
+            current = newest.get(record.thread_id)
+            if current is None or record.checkpoint_at > current[0]:
+                newest[record.thread_id] = (record.checkpoint_at, record.state)
 
         summaries = [
             await self._thread_summary(thread_id=thread_id, state=state)
@@ -229,14 +195,7 @@ class ReadHistory:
         return MessagePage(items=items, next_cursor=next_cursor)
 
     async def _load_state(self, thread_id: str) -> InvestigationState:
-        config = graph_config(thread_id=thread_id)
-        try:
-            snapshot: GraphSnapshot = await self._graph.aget_state(config)
-            state = parse_state(snapshot.values)
-        except IncompatibleStateError:
-            raise IncompatibleStateFailure from None
-        except Exception as exc:
-            raise translate_adapter_error(exc) from None
+        state = await self._investigator.load_state(thread_id)
         if state is None:
             raise ThreadNotFound
         return state
@@ -294,37 +253,6 @@ class ReadHistory:
         return sequence, message_id
 
 
-def _state_from_checkpoint(record: CheckpointRecord) -> InvestigationState | None:
-    values = record.checkpoint.get("channel_values")
-    if not isinstance(values, Mapping) or not values:
-        return None
-    try:
-        return parse_state(values)
-    except (ValueError, TypeError, IncompatibleStateError):
-        return None
-
-
-def _metadata_string(metadata: Mapping[str, object], key: str) -> str | None:
-    value = metadata.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def _checkpoint_timestamp(record: CheckpointRecord, *, state: InvestigationState) -> datetime:
-    raw = record.checkpoint.get("ts")
-    if isinstance(raw, str):
-        try:
-            timestamp = datetime.fromisoformat(raw)
-            if timestamp.tzinfo is not None:
-                return timestamp
-        except ValueError:
-            pass
-    turn = state.turn
-    return max(
-        (message.created_at for message in state.history.messages),
-        default=turn.opened_at if turn is not None else datetime.min.replace(tzinfo=UTC),
-    )
-
-
 def _message_item(message: HistoryMessage, *, interrupted_turn_id: str | None) -> MessageItem:
     status = (
         TurnStatus.INTERRUPTED
@@ -345,8 +273,6 @@ def _message_item(message: HistoryMessage, *, interrupted_turn_id: str | None) -
 
 
 __all__ = [
-    "CheckpointReader",
-    "CheckpointRecord",
     "CursorCodec",
     "HistoryReadPolicy",
     "InvalidCursor",

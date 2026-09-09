@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from langchain.agents import create_agent
@@ -15,37 +15,31 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
+from investigation_agent.core.context import CancellationSignal
 from investigation_agent.genai.guardrails.middleware import normalize_untrusted_text
-from investigation_agent.genai.record_query.executor import (
-    ExecutorLimits,
-    ReaderPool,
-    execute_guarded_select,
-)
-from investigation_agent.genai.record_query.policy import (
-    SqlPolicyViolation,
-    schema_description,
-    validate_sql_plan,
-)
 from investigation_agent.genai.record_query.prompts import QUERY_AGENT_SYSTEM_PROMPT
 from investigation_agent.genai.record_query.schemas import (
     MAX_SEMANTIC_ATTEMPTS,
-    DiagnosticClass,
-    GuardedSelectResult,
     QueryAttempt,
     QueryConsumption,
     QueryIntent,
     QueryOutcome,
     QueryVerdict,
-    SafeDiagnostic,
-    SqlPlan,
-    StructuredRowEvidence,
-    digest_payload,
 )
-from investigation_agent.genai.shared.retries import (
-    CancellationToken,
-    RetryPolicy,
+from investigation_agent.genai.shared.middleware import (
     model_retry_middleware,
     tool_retry_middleware,
+)
+from investigation_agent.genai.shared.retry import RetryPolicy
+from investigation_agent.ports.record_query import (
+    DiagnosticClass,
+    GuardedSelectResult,
+    RecordQueryExecutor,
+    SafeDiagnostic,
+    SqlPlan,
+    SqlPolicyViolation,
+    StructuredRowEvidence,
+    digest_payload,
 )
 
 type ProgressWriter = Callable[[Mapping[str, object]], None]
@@ -60,8 +54,7 @@ class QueryInvocation:
     """Invocation-local, trusted state the nested model can neither read nor write."""
 
     deadline: float
-    cancellation: CancellationToken
-    limits: ExecutorLimits
+    cancellation: CancellationSignal
     fingerprints: set[str] = field(default_factory=set)
     attempts: list[QueryAttempt] = field(default_factory=list)
     rows: dict[str, StructuredRowEvidence] = field(default_factory=dict)
@@ -91,17 +84,14 @@ class QueryRecordsAgent:
         self,
         *,
         model: Any,
-        reader_pool: ReaderPool,
-        executor_limits: ExecutorLimits,
+        executor: RecordQueryExecutor,
         retry_policy: RetryPolicy,
         transient_errors: tuple[type[Exception], ...],
         policy: QueryAgentPolicy | None = None,
     ) -> None:
-        self._reader_pool = reader_pool
-        # Physical retries are owned by the tool retry middleware, not the executor.
-        self._executor_limits = replace(executor_limits, max_physical_attempts=1)
+        self._executor = executor
         self._policy = policy or QueryAgentPolicy()
-        self._schema = schema_description()
+        self._schema = executor.schema_description()
         self._agent = create_agent(
             model=model,
             tools=[self._build_execute_tool()],
@@ -130,7 +120,7 @@ class QueryRecordsAgent:
         )
 
     def _build_execute_tool(self) -> Any:
-        pool = self._reader_pool
+        executor = self._executor
 
         @tool
         async def execute_sql(
@@ -159,7 +149,7 @@ class QueryRecordsAgent:
                     )
                 )
             try:
-                validated = validate_sql_plan(plan)
+                validated = executor.validate(plan)
             except SqlPolicyViolation as violation:
                 fingerprint = digest_payload({"rejected": plan.model_dump(mode="json")})
                 return _record_rejection(invocation, fingerprint, violation.diagnostic)
@@ -176,12 +166,7 @@ class QueryRecordsAgent:
                 )
             invocation.cancellation.check()
             invocation.physical_attempts += 1
-            result = await execute_guarded_select(
-                pool=pool,
-                plan=plan,
-                deadline=invocation.deadline,
-                limits=invocation.limits,
-            )
+            result = await executor.execute(plan, deadline=invocation.deadline)
             if _is_transient_failure(result):
                 raise QueryTransientError("transient database failure during guarded select")
             return _record_result(invocation, fingerprint, result, runtime)
@@ -194,13 +179,12 @@ class QueryRecordsAgent:
         *,
         call_id: str,
         deadline: float,
-        cancellation: CancellationToken,
+        cancellation: CancellationSignal,
         progress: ProgressWriter | None = None,
     ) -> QueryOutcome:
         invocation = QueryInvocation(
             deadline=deadline,
             cancellation=cancellation,
-            limits=self._executor_limits,
         )
         payload = {
             "intent": intent.model_dump(mode="json"),

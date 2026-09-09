@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from investigation_agent.domain.investigation_state import WorkingProjection
-from investigation_agent.genai.shared.structured import StructuredChat
+from investigation_agent.genai.shared.structured_output import StructuredChat
 from investigation_agent.genai.state_projection.prompts import PROJECTION_SYSTEM_PROMPT
 from investigation_agent.genai.state_projection.schemas import ProjectionInput
 

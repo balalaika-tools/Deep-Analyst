@@ -66,12 +66,12 @@ capabilities rather than dependencies of this repository.
 
 | Skill | Short purpose |
 |---|---|
-| `observability` | Designs and reviews OpenTelemetry traces, metrics, structured logs, GenAI telemetry, propagation, and Collector routing. |
+| `otel-observability` | Designs and reviews OpenTelemetry traces, metrics, structured logs, GenAI telemetry, propagation, and Collector routing. |
 | `prompt-writing` | Creates or improves reusable prompts and agent instructions with explicit inputs, outputs, and constraints. |
 | `pytest` | Builds high-value Python tests for APIs, async code, workers, databases, integrations, and AI workflows. |
-| `python-backend-structure` | Organizes Python services around application logic, ports, adapters, bootstrap, persistence, GenAI, and test boundaries. |
-| `python-uv-workspace-monorepo` | Standardizes uv workspaces, internal packages, shared tooling, lockfiles, CI, and lean service images. |
-| `settings-config` | Guides typed settings, YAML baselines, `.env.example`, secret handling, and external secret-manager integration. |
+| `python-service-architecture` | Organizes Python services around application logic, ports, adapters, bootstrap, persistence, GenAI, and test boundaries. |
+| `python-repository-setup` | Standardizes uv workspaces, internal packages, shared tooling, lockfiles, CI, and lean service images. |
+| `python-settings-config` | Guides typed settings, YAML baselines, `.env.example`, secret handling, and external secret-manager integration. |
 
 ### Frontend engineering
 

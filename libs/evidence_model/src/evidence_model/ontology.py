@@ -70,6 +70,22 @@ ALLOWED_ENDPOINTS: Mapping[Predicate, frozenset[EndpointPair]] = {
     Predicate.REFERENCES: frozenset({(EntityType.TRANSACTION, EntityType.INVOICE_REF)}),
 }
 
+PREDICATE_DESCRIPTIONS: Mapping[Predicate, str] = {
+    Predicate.USES: "a person uses a phone or device",
+    Predicate.ASSOCIATED_WITH: "a person has a general association with an organization",
+    Predicate.DIRECTOR_OF: "a person is a director of an organization",
+    Predicate.KIN_OF: "two people have a family relationship",
+    Predicate.HELD_BY: "a financial account is held by a person or organization",
+    Predicate.COMMUNICATED_WITH: "two phone numbers or two email addresses communicated",
+    Predicate.TRANSFERRED_TO: "one financial account transferred value to another account",
+    Predicate.REFERENCES: "a transaction references an invoice identifier",
+}
+
+RELATIONSHIP_STATUS_DESCRIPTIONS: Mapping[RelationshipStatus, str] = {
+    RelationshipStatus.CONFIRMED: "derived by deterministic extraction rules",
+    RelationshipStatus.PROPOSED: "a hypothesis that may have been proposed by a model",
+}
+
 # What a model may propose. Everything else comes from deterministic rules only.
 LLM_ENTITY_TYPES: frozenset[EntityType] = frozenset(
     {EntityType.PERSON, EntityType.ORGANIZATION, EntityType.LOCATION}

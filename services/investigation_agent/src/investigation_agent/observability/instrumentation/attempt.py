@@ -89,6 +89,23 @@ class AttemptTelemetryFactory:
             api_started_at=api_started_at,
         )
 
+    def start(
+        self,
+        *,
+        thread_id: str,
+        turn_id: str,
+        attempt: int,
+        prior_trace_carrier: Mapping[str, str] | None,
+        api_started_at: float | None = None,
+    ) -> AttemptTelemetry:
+        return self.create(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            attempt=attempt,
+            prior_trace_carrier=prior_trace_carrier,
+            api_started_at=api_started_at,
+        )
+
 
 def current_attempt() -> AttemptTelemetry | None:
     """Return the attempt active for this task, if instrumentation was bound."""

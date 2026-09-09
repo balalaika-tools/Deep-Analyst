@@ -35,8 +35,9 @@ from investigation_agent.genai.investigation.schemas import (
     InvestigationAgentState,
 )
 from investigation_agent.genai.investigation.tools import TOOL_NAMES
-from investigation_agent.genai.shared.retries import RetryPolicy, model_retry_middleware
-from investigation_agent.genai.shared.structured import StructuredResultRunner
+from investigation_agent.genai.shared.middleware import model_retry_middleware
+from investigation_agent.genai.shared.retry import RetryPolicy
+from investigation_agent.genai.shared.structured_output import StructuredResultRunner
 from investigation_agent.genai.state_projection.compactor import ProjectionModel
 from investigation_agent.observability.instrumentation import LogicalModelTelemetryMiddleware
 

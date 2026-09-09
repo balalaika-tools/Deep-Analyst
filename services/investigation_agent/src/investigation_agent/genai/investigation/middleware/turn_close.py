@@ -36,12 +36,8 @@ from investigation_agent.genai.investigation.middleware.contracts import (
     require_state,
 )
 from investigation_agent.genai.investigation.schemas import AnswerDraft
-from investigation_agent.genai.shared.retries import OperationCancelledError
-from investigation_agent.genai.shared.structured import (
-    StructuredResultRunner,
-    cancellation_token,
-    loop_deadline,
-)
+from investigation_agent.genai.shared.retry import retry_deadline
+from investigation_agent.genai.shared.structured_output import StructuredResultRunner
 from investigation_agent.genai.state_projection.compactor import ProjectionModel, run_projection
 from investigation_agent.genai.state_projection.schemas import TurnOutcome, build_projection_input
 from investigation_agent.observability.instrumentation import phase_span
@@ -224,7 +220,7 @@ class TurnCloseMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
                 {"evidence_cards": [_card_payload(card) for card in state.evidence.ordered()]},
                 context=context,
             )
-        except (asyncio.CancelledError, OperationCancelledError):
+        except asyncio.CancelledError:
             raise
         except Exception:
             return None, 1
@@ -270,8 +266,8 @@ class TurnCloseMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
             model=self._projection_model,
             retry_policy=self._retry_policy,
             transient_errors=self._transient_errors,
-            cancellation=cancellation_token(context),
-            deadline=loop_deadline(context),
+            cancellation=context.cancellation,
+            deadline=retry_deadline(context),
             can_start_model=lambda: (
                 reserve_left > 0
                 and not context.cancellation.cancelled

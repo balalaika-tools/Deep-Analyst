@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from investigation_agent.adapters.postgres.initializer import VIEW_DEFINITIONS
-from investigation_agent.genai.record_query.policy import VIEW_COLUMNS
+from investigation_agent.db.initializer import VIEW_DEFINITIONS
+from investigation_agent.db.record_query_policy import VIEW_COLUMNS
 from pglast import parser
 
 

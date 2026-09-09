@@ -10,7 +10,7 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langgraph.runtime import Runtime
 
-from investigation_agent.core.context import RuntimeContext
+from investigation_agent.core.context import CancellationSignal, RuntimeContext
 from investigation_agent.domain.investigation_state import (
     InvestigationState,
     TurnState,
@@ -25,8 +25,7 @@ from investigation_agent.genai.guardrails.schemas import (
     InputGuardrailVerdict,
     NormalizedEvidence,
 )
-from investigation_agent.genai.shared.retries import (
-    CancellationToken,
+from investigation_agent.genai.shared.retry import (
     RetryPolicy,
     TransientExhaustedError,
     retry_async,
@@ -94,7 +93,7 @@ async def evaluate_input_guardrail(
     model: InputGuardrailModel,
     retry_policy: RetryPolicy,
     transient_errors: tuple[type[BaseException], ...],
-    cancellation: CancellationToken,
+    cancellation: CancellationSignal,
     deadline: float,
     sleep: Callable[[float], Awaitable[None]] | None = None,
     on_attempt: Callable[[int, BaseException | None], None] | None = None,

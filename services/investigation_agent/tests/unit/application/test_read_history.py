@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from investigation_agent.application.invoke_turn import InvocationGraph, ThreadNotFound
+from investigation_agent.application.invoke_turn import ThreadNotFound
 from investigation_agent.application.read_history import (
     CursorCodec,
     HistoryReadPolicy,
@@ -14,7 +14,6 @@ from investigation_agent.application.read_history import (
     ReadHistory,
 )
 from investigation_agent.application.thread_locks import ThreadLockRegistry
-from investigation_agent.core.context import RuntimeContext
 from investigation_agent.domain.history import (
     HistoryState,
     TurnStatus,
@@ -28,64 +27,42 @@ from investigation_agent.domain.investigation_state import (
     InvestigationState,
     new_turn_state,
 )
+from investigation_agent.ports.checkpoints import StoredThreadState
 
 NOW = datetime(2026, 2, 1, 12, tzinfo=UTC)
-
-
-@dataclass(frozen=True)
-class FakeSnapshot:
-    values: Mapping[str, Any]
 
 
 @dataclass
 class HistoryGraph:
     state: InvestigationState | None
-    configs: list[Mapping[str, object]] = field(default_factory=list)
+    threads: list[str] = field(default_factory=list)
 
-    async def aget_state(self, config: Mapping[str, object]) -> FakeSnapshot:
-        self.configs.append(config)
-        return FakeSnapshot(self.state.as_update() if self.state else {})
+    async def load_state(self, thread_id: str) -> InvestigationState | None:
+        self.threads.append(thread_id)
+        return self.state
 
-    async def astream(
+    async def stream_turn(
         self,
-        input: Any,
-        config: Any,
+        turn_input: Any,
         *,
-        context: RuntimeContext,
-        stream_mode: list[str],
-        durability: str,
-        version: str,
+        thread_id: str,
+        context: Any,
+        max_steps: int,
     ) -> AsyncIterator[object]:
-        del input, config, context, stream_mode, durability, version
+        del turn_input, thread_id, context, max_steps
         if False:
             yield None
 
 
-@dataclass(frozen=True)
-class FakeCheckpoint:
-    checkpoint: Mapping[str, object]
-    metadata: Mapping[str, object]
-
-
 @dataclass
 class FakeCheckpointer:
-    records: list[FakeCheckpoint]
-    filters: list[Mapping[str, object] | None] = field(default_factory=list)
+    records: list[StoredThreadState]
     limits: list[int | None] = field(default_factory=list)
 
-    def alist(
-        self,
-        config: Mapping[str, object] | None,
-        *,
-        filter: Mapping[str, object] | None = None,
-        before: Mapping[str, object] | None = None,
-        limit: int | None = None,
-    ) -> AsyncIterator[FakeCheckpoint]:
-        del config, before
-        self.filters.append(filter)
+    def scan_threads(self, *, limit: int) -> AsyncIterator[StoredThreadState]:
         self.limits.append(limit)
 
-        async def _records() -> AsyncIterator[FakeCheckpoint]:
+        async def _records() -> AsyncIterator[StoredThreadState]:
             for record in self.records[:limit]:
                 yield record
 
@@ -176,14 +153,14 @@ def _thread(
 
 
 def _reader(
-    graph: InvocationGraph,
+    graph: HistoryGraph,
     *,
     checkpointer: FakeCheckpointer | None = None,
     locks: ThreadLockRegistry | None = None,
 ) -> ReadHistory:
     return ReadHistory(
-        graph=graph,
-        checkpointer=checkpointer or FakeCheckpointer([]),
+        investigator=graph,
+        store=checkpointer or FakeCheckpointer([]),
         locks=locks or ThreadLockRegistry(),
         cursors=CursorCodec(),
         policy=HistoryReadPolicy(default_page_size=2, max_page_size=3, max_checkpoint_scan=20),
@@ -196,10 +173,12 @@ def _record(
     *,
     checkpoint_at: datetime,
     app: str = "investigation",
-) -> FakeCheckpoint:
-    return FakeCheckpoint(
-        checkpoint={"ts": checkpoint_at.isoformat(), "channel_values": state.as_update()},
-        metadata={"app": app, "public_thread_id": thread_id},
+) -> StoredThreadState:
+    del app
+    return StoredThreadState(
+        thread_id=thread_id,
+        checkpoint_at=checkpoint_at,
+        state=state,
     )
 
 
@@ -250,7 +229,7 @@ async def test_message_cursor_remains_continuous_when_assistant_is_appended() ->
     assert [item.sequence for item in second.items] == [3, 4]
     assert "Phone +30 210 000 0000" in second.items[0].content
     assert second.next_cursor is None
-    assert graph.configs[0]["configurable"] == {"thread_id": "thread-1"}
+    assert graph.threads == ["thread-1", "thread-1"]
 
 
 @pytest.mark.asyncio
@@ -323,7 +302,6 @@ async def test_thread_list_uses_app_filter_keeps_newest_checkpoint_and_pages_sta
         ("thread-a", TurnStatus.INTERRUPTED)
     ]
     assert second.next_cursor is None
-    assert checkpointer.filters == [{"app": "investigation"}, {"app": "investigation"}]
     assert checkpointer.limits == [20, 20]
     assert set(first.model_dump(mode="json")["items"][0]) == {
         "thread_id",

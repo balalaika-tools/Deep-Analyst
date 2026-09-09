@@ -2,26 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Protocol
-
-from investigation_agent.application.invoke_turn import (
-    InvocationGraph,
-    ThreadBusy,
-    ThreadNotFound,
-    graph_config,
-)
+from investigation_agent.application.invoke_turn import ThreadBusy, ThreadNotFound
 from investigation_agent.application.thread_locks import (
     ThreadAlreadyLockedError,
     ThreadLockRegistry,
 )
-from investigation_agent.core.errors import translate_adapter_error
+from investigation_agent.ports.checkpoints import ThreadStateDeleter
+from investigation_agent.ports.investigator import Investigator
 
 DELETE_REQUEST_ID = "__delete__"
-
-
-class ThreadDeleter(Protocol):
-    async def adelete_thread(self, thread_id: str) -> None: ...
 
 
 class DeleteThread:
@@ -30,12 +19,12 @@ class DeleteThread:
     def __init__(
         self,
         *,
-        graph: InvocationGraph,
-        checkpointer: ThreadDeleter,
+        investigator: Investigator,
+        store: ThreadStateDeleter,
         locks: ThreadLockRegistry,
     ) -> None:
-        self._graph = graph
-        self._checkpointer = checkpointer
+        self._investigator = investigator
+        self._store = store
         self._locks = locks
 
     async def delete(self, thread_id: str) -> None:
@@ -44,19 +33,12 @@ class DeleteThread:
         except ThreadAlreadyLockedError:
             raise ThreadBusy from None
         try:
-            config: Mapping[str, Any] = graph_config(thread_id=thread_id)
-            try:
-                snapshot = await self._graph.aget_state(config)
-            except Exception as exc:
-                raise translate_adapter_error(exc) from None
-            if not snapshot.values or not snapshot.values.get("control"):
+            state = await self._investigator.load_state(thread_id)
+            if state is None:
                 raise ThreadNotFound
-            try:
-                await self._checkpointer.adelete_thread(thread_id)
-            except Exception as exc:
-                raise translate_adapter_error(exc) from None
+            await self._store.adelete_thread(thread_id)
         finally:
             await lease.release()
 
 
-__all__ = ["DELETE_REQUEST_ID", "DeleteThread", "ThreadDeleter"]
+__all__ = ["DELETE_REQUEST_ID", "DeleteThread"]

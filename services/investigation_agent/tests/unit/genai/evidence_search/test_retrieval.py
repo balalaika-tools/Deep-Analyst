@@ -10,7 +10,7 @@ from investigation_agent.genai.evidence_search.retrieval import (
     fuse_candidates,
     retrieve_hybrid,
 )
-from investigation_agent.genai.evidence_search.schemas import (
+from investigation_agent.ports.evidence_search import (
     RetrievalCandidate,
     RetrievalModality,
     RetrievalQuery,

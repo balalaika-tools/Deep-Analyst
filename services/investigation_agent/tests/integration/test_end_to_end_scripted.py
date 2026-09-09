@@ -15,8 +15,6 @@ from typing import Any, cast
 
 import pytest
 from evidence_model import FieldLocator, SourceRef
-from investigation_agent.adapters.postgres.checkpointer import create_checkpointer
-from investigation_agent.adapters.postgres.pools import DatabasePools
 from investigation_agent.api.sse import stream_prepared_turn
 from investigation_agent.application.delete_thread import DeleteThread
 from investigation_agent.application.invoke_turn import (
@@ -26,14 +24,11 @@ from investigation_agent.application.invoke_turn import (
     PreparedTurnKind,
     ThreadNotFound,
 )
-from investigation_agent.application.read_history import (
-    CheckpointReader,
-    CursorCodec,
-    HistoryReadPolicy,
-    ReadHistory,
-)
+from investigation_agent.application.read_history import CursorCodec, HistoryReadPolicy, ReadHistory
 from investigation_agent.application.thread_locks import ThreadLockRegistry
 from investigation_agent.core.context import RuntimeContext
+from investigation_agent.db.checkpointer import PostgresCheckpointStore, create_checkpointer
+from investigation_agent.db.pools import DatabasePools
 from investigation_agent.domain.history import HistoryRole, TurnStatus
 from investigation_agent.domain.investigation_state import WorkingProjection
 from investigation_agent.domain.tool_outcome import (
@@ -49,8 +44,9 @@ from investigation_agent.genai.investigation.agent import (
     AgentLimits,
     build_investigation_agent,
 )
+from investigation_agent.genai.investigation.investigator import LangGraphInvestigator
 from investigation_agent.genai.investigation.schemas import GroundingVerdict
-from investigation_agent.genai.shared.retries import AttemptResult, RetryPolicy
+from investigation_agent.genai.shared.retry import AttemptResult, RetryPolicy
 from investigation_agent.genai.state_projection.schemas import ProjectionInput
 from langchain.tools import ToolRuntime
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -89,7 +85,9 @@ class ScriptedChatModel(BaseChatModel):
         del stop, run_manager, kwargs
         self.seen.append(list(messages))
         self.calls += 1
-        is_follow_up = any("What was the first transfer amount?" in str(item.content) for item in messages)
+        is_follow_up = any(
+            "What was the first transfer amount?" in str(item.content) for item in messages
+        )
         template = (
             AIMessage(content="", tool_calls=[_draft("c5", ANSWER_2, "t_85")])
             if is_follow_up
@@ -276,15 +274,22 @@ async def test_scripted_turns_survive_interruption_and_replay_byte_identically(
     policy = InvocationPolicy(
         policy_version="e2e", max_message_chars=4_000, turn_timeout_s=30, max_history_turns=10
     )
-    invoke = InvokeTurn(graph=agent, locks=locks, policy=policy, clock=lambda: datetime.now(UTC))
+    investigator = LangGraphInvestigator(agent)
+    checkpoint_store = PostgresCheckpointStore(saver)
+    invoke = InvokeTurn(
+        investigator=investigator,
+        locks=locks,
+        policy=policy,
+        clock=lambda: datetime.now(UTC),
+    )
     history = ReadHistory(
-        graph=agent,
-        checkpointer=cast(CheckpointReader, saver),
+        investigator=investigator,
+        store=checkpoint_store,
         locks=locks,
         cursors=CursorCodec(),
         policy=HistoryReadPolicy(default_page_size=2, max_page_size=3),
     )
-    deleter = DeleteThread(graph=agent, checkpointer=saver, locks=locks)
+    deleter = DeleteThread(investigator=investigator, store=checkpoint_store, locks=locks)
     thread = f"e2e-{datetime.now(UTC).timestamp():.0f}"
 
     async def turn(request_id: str, message: str) -> list[dict[str, Any]]:

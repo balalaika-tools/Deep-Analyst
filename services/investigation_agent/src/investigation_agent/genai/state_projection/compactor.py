@@ -6,10 +6,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from investigation_agent.core.context import CancellationSignal
 from investigation_agent.domain.investigation_state import InvestigationState, WorkingProjection
-from investigation_agent.genai.shared.retries import (
-    CancellationToken,
-    OperationCancelledError,
+from investigation_agent.genai.shared.retry import (
     RetryPolicy,
     retry_async,
 )
@@ -113,7 +112,7 @@ async def run_projection(
     model: ProjectionModel,
     retry_policy: RetryPolicy,
     transient_errors: tuple[type[BaseException], ...],
-    cancellation: CancellationToken,
+    cancellation: CancellationSignal,
     deadline: float,
     can_start_model: Callable[[], bool] = lambda: True,
     sleep: Callable[[float], Awaitable[None]] | None = None,
@@ -153,14 +152,14 @@ async def run_projection(
         try:
             repaired = await invoke(first.violations)
             valid = validate_projection(repaired, request, state)
-        except OperationCancelledError:
+        except asyncio.CancelledError:
             raise
         except Exception:
             # A second unusable replacement, transient exhaustion, or a malformed model
             # output all leave the validated predecessor in place; the turn is not lost.
             return ProjectionResult(stale_projection(request), 2, total_attempts, True)
         return ProjectionResult(valid, 2, total_attempts, False)
-    except OperationCancelledError:
+    except asyncio.CancelledError:
         raise
     except Exception:
         return ProjectionResult(stale_projection(request), 1, total_attempts, True)

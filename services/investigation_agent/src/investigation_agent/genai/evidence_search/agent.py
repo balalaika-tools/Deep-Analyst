@@ -15,9 +15,9 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
+from investigation_agent.core.context import CancellationSignal
 from investigation_agent.genai.evidence_search.prompts import SEARCH_AGENT_SYSTEM_PROMPT
 from investigation_agent.genai.evidence_search.retrieval import (
-    CandidateReader,
     FusionPolicy,
     TextEmbedder,
     retrieve_hybrid,
@@ -25,7 +25,6 @@ from investigation_agent.genai.evidence_search.retrieval import (
 from investigation_agent.genai.evidence_search.schemas import (
     MAX_SEMANTIC_ATTEMPTS,
     FusedCandidate,
-    RetrievalQuery,
     SearchAttempt,
     SearchConsumption,
     SearchEvidence,
@@ -34,12 +33,12 @@ from investigation_agent.genai.evidence_search.schemas import (
     SearchVerdict,
 )
 from investigation_agent.genai.guardrails.middleware import normalize_untrusted_text
-from investigation_agent.genai.shared.retries import (
-    CancellationToken,
-    RetryPolicy,
+from investigation_agent.genai.shared.middleware import (
     model_retry_middleware,
     tool_retry_middleware,
 )
+from investigation_agent.genai.shared.retry import RetryPolicy
+from investigation_agent.ports.evidence_search import EvidenceCandidateReader, RetrievalQuery
 
 type ProgressWriter = Callable[[Mapping[str, object]], None]
 
@@ -53,7 +52,7 @@ class SearchInvocation:
     """Invocation-local, trusted state the nested model can neither read nor write."""
 
     deadline: float
-    cancellation: CancellationToken
+    cancellation: CancellationSignal
     excluded_chunk_ids: set[str]
     max_top_k: int
     fingerprints: set[str] = field(default_factory=set)
@@ -85,7 +84,7 @@ class SearchEvidenceAgent:
         self,
         *,
         model: Any,
-        reader: CandidateReader,
+        reader: EvidenceCandidateReader,
         embedder: TextEmbedder,
         fusion_policy: FusionPolicy,
         retry_policy: RetryPolicy,
@@ -210,7 +209,7 @@ class SearchEvidenceAgent:
         *,
         call_id: str,
         deadline: float,
-        cancellation: CancellationToken,
+        cancellation: CancellationSignal,
         seen_chunk_ids: frozenset[str],
         progress: ProgressWriter | None = None,
     ) -> SearchOutcome:

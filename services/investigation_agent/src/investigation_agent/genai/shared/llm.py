@@ -1,13 +1,9 @@
-"""Shared Bedrock client construction with no import-time external effects."""
+"""Shared Bedrock constructors with explicit inputs and no import-time clients."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from enum import StrEnum
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol, cast
-
-from investigation_agent.config.settings import Settings
 
 
 class ChatModel(Protocol):
@@ -18,45 +14,8 @@ class EmbeddingModel(Protocol):
     async def aembed_query(self, text: str) -> list[float]: ...
 
 
-class ModelPurpose(StrEnum):
-    PLANNER = "planner"
-    GUARDRAIL = "guardrail"
-    SEARCH = "search"
-    QUERY = "query"
-    PROJECTION = "projection"
-    VERIFIER = "verifier"
-    CLOSURE = "closure"
-
-
-@dataclass(frozen=True, slots=True)
-class ModelClients:
-    """Explicit role bindings prevent accidental cross-purpose model reuse."""
-
-    planner: ChatModel
-    guardrail: ChatModel
-    search: ChatModel
-    query: ChatModel
-    projection: ChatModel
-    verifier: ChatModel
-    closure: ChatModel
-    embeddings: EmbeddingModel
-
-    def chat(self, purpose: ModelPurpose) -> ChatModel:
-        return cast(ChatModel, getattr(self, purpose.value))
-
-
 type ChatFactory = Callable[..., ChatModel]
 type EmbeddingFactory = Callable[..., EmbeddingModel]
-
-
-def _generation_options(settings: Settings) -> dict[str, Any]:
-    """Return only generation controls supported by the configured model."""
-    if "openai.gpt-5.6-terra" in settings.bedrock_chat_model_id:
-        return {}
-    return {
-        "temperature": settings.model_temperature,
-        "reasoning_effort": settings.model_reasoning_effort,
-    }
 
 
 def _default_chat_factory(model_id: str, **options: Any) -> ChatModel:
@@ -71,60 +30,63 @@ def _default_embedding_factory(model_id: str, **options: Any) -> EmbeddingModel:
     return BedrockEmbeddings(model_id=model_id, **options)
 
 
-def build_model_clients(
-    settings: Settings,
+def build_chat_model(
     *,
-    chat_factory: ChatFactory = _default_chat_factory,
-    embedding_factory: EmbeddingFactory = _default_embedding_factory,
+    model_id: str,
+    region_name: str,
+    timeout_s: float,
+    temperature: float,
+    reasoning_effort: str,
     callbacks: Sequence[object] = (),
-    purpose_options: Mapping[ModelPurpose, Mapping[str, Any]] | None = None,
-) -> ModelClients:
-    """Build purpose-specific clients after settings validation."""
+    factory: ChatFactory = _default_chat_factory,
+) -> ChatModel:
+    """Build one isolated chat client from resolved provider configuration."""
 
     from botocore.config import Config
 
-    sdk_config = Config(
-        connect_timeout=settings.model_timeout_s,
-        read_timeout=settings.model_timeout_s,
-        retries={"max_attempts": 0},
-    )
-    shared: dict[str, Any] = {
-        "region_name": settings.aws_region,
-        "config": sdk_config,
-        **_generation_options(settings),
+    options: dict[str, Any] = {
+        "region_name": region_name,
+        "config": Config(
+            connect_timeout=timeout_s,
+            read_timeout=timeout_s,
+            retries={"max_attempts": 0},
+        ),
     }
+    if "openai.gpt-5.6-terra" not in model_id:
+        options.update(temperature=temperature, reasoning_effort=reasoning_effort)
     if callbacks:
-        shared["callbacks"] = list(callbacks)
-    overrides = purpose_options or {}
-    chats = {
-        purpose: chat_factory(
-            settings.bedrock_chat_model_id,
-            **{**shared, **overrides.get(purpose, {})},
-        )
-        for purpose in ModelPurpose
-    }
-    embeddings = embedding_factory(
-        settings.bedrock_embedding_model_id,
-        region_name=settings.aws_region,
+        options["callbacks"] = list(callbacks)
+    return factory(model_id, **options)
+
+
+def build_embedding_model(
+    *,
+    model_id: str,
+    region_name: str,
+    timeout_s: float,
+    factory: EmbeddingFactory = _default_embedding_factory,
+) -> EmbeddingModel:
+    """Build the shared embedding client from resolved provider configuration."""
+
+    from botocore.config import Config
+
+    return factory(
+        model_id,
+        region_name=region_name,
         normalize=True,
-        config=sdk_config,
-    )
-    return ModelClients(
-        planner=chats[ModelPurpose.PLANNER],
-        guardrail=chats[ModelPurpose.GUARDRAIL],
-        search=chats[ModelPurpose.SEARCH],
-        query=chats[ModelPurpose.QUERY],
-        projection=chats[ModelPurpose.PROJECTION],
-        verifier=chats[ModelPurpose.VERIFIER],
-        closure=chats[ModelPurpose.CLOSURE],
-        embeddings=embeddings,
+        config=Config(
+            connect_timeout=timeout_s,
+            read_timeout=timeout_s,
+            retries={"max_attempts": 0},
+        ),
     )
 
 
 __all__ = [
+    "ChatFactory",
     "ChatModel",
+    "EmbeddingFactory",
     "EmbeddingModel",
-    "ModelClients",
-    "ModelPurpose",
-    "build_model_clients",
+    "build_chat_model",
+    "build_embedding_model",
 ]

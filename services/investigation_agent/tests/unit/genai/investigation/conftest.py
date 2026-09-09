@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from evidence_model import FieldLocator, SourceRef
-from investigation_agent.core.context import RuntimeContext
+from investigation_agent.core.context import CancellationController, RuntimeContext
 from investigation_agent.domain.history import stable_message_id, stable_turn_id
 from investigation_agent.domain.investigation_state import (
     ControlState,
@@ -36,7 +36,7 @@ from investigation_agent.genai.investigation.agent import (
     build_investigation_agent,
 )
 from investigation_agent.genai.investigation.schemas import GroundingVerdict
-from investigation_agent.genai.shared.retries import AttemptResult, CancellationToken, RetryPolicy
+from investigation_agent.genai.shared.retry import AttemptResult, RetryPolicy
 from investigation_agent.genai.state_projection.schemas import ProjectionInput
 from langchain.tools import ToolRuntime
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -275,7 +275,7 @@ class Harness:
     projection: FakeProjectionModel
     saver: InMemorySaver
     agent: Any
-    cancellation: CancellationToken = field(default_factory=CancellationToken.create)
+    cancellation: CancellationController = field(default_factory=CancellationController.create)
 
     def context(self, *, thread_id: str, request_id: str, seconds: float = 30) -> RuntimeContext:
         return RuntimeContext(

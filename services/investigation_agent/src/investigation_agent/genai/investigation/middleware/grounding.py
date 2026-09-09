@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -36,11 +37,10 @@ from investigation_agent.genai.investigation.prompts import (
     STRUCTURED_ANSWER_INSTRUCTION,
 )
 from investigation_agent.genai.investigation.schemas import AnswerDraft, GroundingVerdict
-from investigation_agent.genai.shared.retries import (
-    OperationCancelledError,
+from investigation_agent.genai.shared.retry import (
     TransientExhaustedError,
 )
-from investigation_agent.genai.shared.structured import StructuredResultRunner
+from investigation_agent.genai.shared.structured_output import StructuredResultRunner
 from investigation_agent.observability.instrumentation import phase_span
 
 
@@ -142,7 +142,7 @@ class GroundingMiddleware(AgentMiddleware[Any, RuntimeContext, Any]):
                 )
             except GroundingValidationError as exc:
                 violations.extend(exc.violations)
-            except (TransientExhaustedError, OperationCancelledError):
+            except (TransientExhaustedError, asyncio.CancelledError):
                 return _fail(turn, "transient_exhausted", ("verifier_unavailable",))
             except (ValidationError, OutputParserException):
                 # A verdict the verifier could not shape is as unusable as a mismatched one.

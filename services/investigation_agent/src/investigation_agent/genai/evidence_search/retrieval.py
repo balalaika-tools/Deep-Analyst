@@ -7,9 +7,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from investigation_agent.genai.evidence_search.schemas import (
-    FusedCandidate,
-    ModalityContribution,
+from investigation_agent.genai.evidence_search.schemas import FusedCandidate, ModalityContribution
+from investigation_agent.ports.evidence_search import (
+    EvidenceCandidateReader,
     RetrievalCandidate,
     RetrievalModality,
     RetrievalQuery,
@@ -18,25 +18,6 @@ from investigation_agent.genai.evidence_search.schemas import (
 
 class TextEmbedder(Protocol):
     async def embed(self, text: str, *, deadline: float) -> Sequence[float]: ...
-
-
-class CandidateReader(Protocol):
-    async def search_lexical(
-        self,
-        *,
-        query: RetrievalQuery,
-        excluded_chunk_ids: frozenset[str],
-        deadline: float,
-    ) -> Sequence[RetrievalCandidate]: ...
-
-    async def search_vector(
-        self,
-        *,
-        query: RetrievalQuery,
-        embedding: Sequence[float],
-        excluded_chunk_ids: frozenset[str],
-        deadline: float,
-    ) -> Sequence[RetrievalCandidate]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +54,7 @@ class CandidateIntegrityError(ValueError):
 
 async def retrieve_hybrid(
     *,
-    reader: CandidateReader,
+    reader: EvidenceCandidateReader,
     embedder: TextEmbedder,
     query: RetrievalQuery,
     excluded_chunk_ids: frozenset[str],
@@ -133,7 +114,7 @@ async def retrieve_hybrid(
 
 async def _embed_then_search(
     *,
-    reader: CandidateReader,
+    reader: EvidenceCandidateReader,
     embedder: TextEmbedder,
     query: RetrievalQuery,
     excluded_chunk_ids: frozenset[str],
@@ -256,7 +237,7 @@ def _assert_same_evidence(left: RetrievalCandidate, right: RetrievalCandidate) -
 
 __all__ = [
     "CandidateIntegrityError",
-    "CandidateReader",
+    "EvidenceCandidateReader",
     "FusionPolicy",
     "HybridRetrievalResult",
     "TextEmbedder",

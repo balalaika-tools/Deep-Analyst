@@ -10,6 +10,7 @@ from fastapi import Request
 from investigation_agent.application.delete_thread import DeleteThread
 from investigation_agent.application.invoke_turn import InvokeTurn
 from investigation_agent.application.read_history import ReadHistory
+from investigation_agent.observability.turn_observation import TurnObserver
 
 
 class ReadinessResult(Protocol):
@@ -61,6 +62,10 @@ def get_sse_shutdown_grace_s(request: Request) -> float:
     return float(value)
 
 
+def get_turn_observer(request: Request) -> TurnObserver | None:
+    return cast(TurnObserver | None, getattr(_runtime(request), "turn_observer", None))
+
+
 def get_readiness_timeout_s(request: Request) -> float:
     value = _runtime_component(request, "readiness_timeout_s")
     if not isinstance(value, int | float) or value <= 0:
@@ -93,4 +98,5 @@ __all__ = [
     "get_sse_chunk_chars",
     "get_sse_heartbeat_s",
     "get_sse_shutdown_grace_s",
+    "get_turn_observer",
 ]

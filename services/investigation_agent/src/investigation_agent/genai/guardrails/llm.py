@@ -18,13 +18,12 @@ from investigation_agent.genai.guardrails.schemas import (
     GuardedEvidenceBatch,
     InputGuardrailVerdict,
 )
-from investigation_agent.genai.shared.retries import RetryPolicy, TransientExhaustedError
-from investigation_agent.genai.shared.structured import (
-    StructuredChat,
-    StructuredRunner,
-    cancellation_token,
-    loop_deadline,
+from investigation_agent.genai.shared.retry import (
+    RetryPolicy,
+    TransientExhaustedError,
+    retry_deadline,
 )
+from investigation_agent.genai.shared.structured_output import StructuredChat, StructuredRunner
 
 
 class InputGuardrailRunner:
@@ -52,8 +51,8 @@ class InputGuardrailRunner:
             model=invoke,
             retry_policy=self._policy,
             transient_errors=self._transient_errors,
-            cancellation=cancellation_token(context),
-            deadline=loop_deadline(context),
+            cancellation=context.cancellation,
+            deadline=retry_deadline(context),
         )
 
 

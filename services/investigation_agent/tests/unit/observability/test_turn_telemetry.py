@@ -20,6 +20,7 @@ from investigation_agent.domain.history import (
     stable_assistant_message_id,
 )
 from investigation_agent.domain.investigation_state import InvestigationState, parse_state
+from investigation_agent.genai.investigation.investigator import LangGraphInvestigator
 from investigation_agent.observability.events import ATTEMPT_SPAN_NAME, InvestigationInstruments
 from investigation_agent.observability.instrumentation import AttemptTelemetryFactory
 from opentelemetry.sdk.metrics import MeterProvider
@@ -125,25 +126,28 @@ def telemetry() -> Iterator[TelemetryFixture]:
     tracer_provider.shutdown()
 
 
-def _service(graph: Graph, factory: AttemptTelemetryFactory) -> InvokeTurn:
+def _service(graph: Graph) -> InvokeTurn:
     return InvokeTurn(
-        graph=graph,
+        investigator=LangGraphInvestigator(graph),
         locks=ThreadLockRegistry(),
         policy=InvocationPolicy(
             policy_version="p", max_message_chars=4_000, turn_timeout_s=30, max_history_turns=10
         ),
         clock=lambda: NOW,
-        telemetry=factory,
     )
 
 
-async def _stream(service: InvokeTurn) -> list[dict[str, Any]]:
+async def _stream(
+    service: InvokeTurn, factory: AttemptTelemetryFactory
+) -> list[dict[str, Any]]:
     prepared = await service.prepare(
         InvokeRequest(request_id="request-1", thread_id="thread-1", message=PII_MESSAGE)
     )
     return [
         json.loads(e["data"])
-        async for e in stream_prepared_turn(prepared, chunk_chars=40, clock=lambda: NOW)
+        async for e in stream_prepared_turn(
+            prepared, chunk_chars=40, observer=factory, clock=lambda: NOW
+        )
     ]
 
 
@@ -152,7 +156,7 @@ async def test_completed_turn_has_one_finite_root_and_no_per_delta_signals(
     telemetry: TelemetryFixture,
 ) -> None:
     factory, exporter, reader = telemetry
-    events = await _stream(_service(Graph(), factory))
+    events = await _stream(_service(Graph()), factory)
 
     deltas = [e for e in events if e["event"] == "answer.delta"]
     assert len(deltas) > 3 and events[-1]["event"] == "run.completed"
@@ -199,12 +203,12 @@ async def test_resumed_turn_starts_a_new_root_linked_to_the_prior_attempt(
 ) -> None:
     factory, exporter, _ = telemetry
     graph = Graph(interrupt_first=True)
-    service = _service(graph, factory)
+    service = _service(graph)
 
-    first = await _stream(service)
+    first = await _stream(service, factory)
     assert first[-1]["event"] == "run.failed" and first[-1]["data"]["code"] == "internal"
     assert graph.values is not None and graph.values["turn"]["prior_trace_carrier"]
-    second = await _stream(service)
+    second = await _stream(service, factory)
     assert second[-1]["event"] == "run.completed" and graph.runs == 2
 
     roots = [s for s in exporter.get_finished_spans() if s.name == ATTEMPT_SPAN_NAME]
@@ -230,20 +234,22 @@ async def test_replay_and_disconnect_do_not_leave_open_roots(
 ) -> None:
     factory, exporter, _ = telemetry
     graph = Graph()
-    service = _service(graph, factory)
-    await _stream(service)
+    service = _service(graph)
+    await _stream(service, factory)
     prepared = await service.prepare(
         InvokeRequest(request_id="request-1", thread_id="thread-1", message=PII_MESSAGE)
     )
-    assert prepared.telemetry is None
+    assert prepared.attempt == 0
     events = [
         json.loads(e["data"])
-        async for e in stream_prepared_turn(prepared, chunk_chars=40, clock=lambda: NOW)
+        async for e in stream_prepared_turn(
+            prepared, chunk_chars=40, observer=factory, clock=lambda: NOW
+        )
     ]
     assert events[-1]["event"] == "run.completed" and graph.runs == 1
 
     disconnected_graph = Graph()
-    disconnected = await _service(disconnected_graph, factory).prepare(
+    disconnected = await _service(disconnected_graph).prepare(
         InvokeRequest(request_id="request-9", thread_id="thread-9", message="hello")
     )
     probes = 0
@@ -256,7 +262,11 @@ async def test_replay_and_disconnect_do_not_leave_open_roots(
     out = [
         e
         async for e in stream_prepared_turn(
-            disconnected, chunk_chars=40, disconnected=probe, clock=lambda: NOW
+            disconnected,
+            chunk_chars=40,
+            observer=factory,
+            disconnected=probe,
+            clock=lambda: NOW,
         )
     ]
     assert len(out) == 1

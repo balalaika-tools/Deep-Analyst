@@ -9,10 +9,14 @@ from typing import Any
 
 import psycopg
 import pytest
+from investigation_agent.core.context import CancellationController
+from investigation_agent.db.record_query_executor import (
+    ExecutorLimits,
+    PostgresRecordQueryExecutor,
+)
 from investigation_agent.genai.record_query.agent import QueryAgentPolicy, QueryRecordsAgent
-from investigation_agent.genai.record_query.executor import ExecutorLimits
 from investigation_agent.genai.record_query.schemas import QueryIntent
-from investigation_agent.genai.shared.retries import CancellationToken, RetryPolicy
+from investigation_agent.genai.shared.retry import RetryPolicy
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
@@ -193,8 +197,14 @@ def _agent(
     model = ScriptedChatModel(responses=responses, seen=[])
     agent = QueryRecordsAgent(
         model=model,
-        reader_pool=pool,
-        executor_limits=ExecutorLimits(max_rows=10, max_bytes=10_000),
+        executor=PostgresRecordQueryExecutor(
+            pool,
+            limits=ExecutorLimits(
+                max_rows=10,
+                max_bytes=10_000,
+                max_physical_attempts=1,
+            ),
+        ),
         retry_policy=POLICY,
         transient_errors=(TimeoutError,),
         policy=policy,
@@ -206,13 +216,13 @@ async def _run(
     agent: QueryRecordsAgent,
     *,
     progress: list[Mapping[str, object]] | None = None,
-    cancellation: CancellationToken | None = None,
+    cancellation: CancellationController | None = None,
 ) -> Any:
     return await agent.run(
         _intent(),
         call_id="call-1",
         deadline=asyncio.get_running_loop().time() + 5,
-        cancellation=cancellation or CancellationToken.create(),
+        cancellation=cancellation or CancellationController.create(),
         progress=None if progress is None else progress.append,
     )
 
@@ -244,7 +254,7 @@ async def test_verdict_selects_only_returned_rows() -> None:
         _intent(),
         call_id="c",
         deadline=asyncio.get_running_loop().time() + 5,
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
     )
     del probe
     # Learn the deterministic row id by running the executor once through a scripted verdict.
@@ -356,7 +366,7 @@ async def test_repeated_plan_is_rejected_without_io_and_plans_are_capped_at_thre
 @pytest.mark.asyncio
 async def test_cancellation_stops_new_plans() -> None:
     pool = FakePool()
-    cancellation = CancellationToken.create()
+    cancellation = CancellationController.create()
     cancellation.cancel()
     agent, _ = _agent([sql_call(SAFE_SQL), verdict("query_sufficient")], pool)
 

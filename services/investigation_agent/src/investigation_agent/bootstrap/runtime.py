@@ -11,28 +11,29 @@ import platform
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
-from investigation_agent.adapters.postgres.checkpointer import create_checkpointer
-from investigation_agent.adapters.postgres.evidence_reader import PostgresEvidenceReader
-from investigation_agent.adapters.postgres.pools import (
+from investigation_agent.api.dependencies import ReadinessResult
+from investigation_agent.application.delete_thread import DeleteThread
+from investigation_agent.application.find_connections import FindConnections
+from investigation_agent.application.invoke_turn import InvocationPolicy, InvokeTurn
+from investigation_agent.application.read_history import CursorCodec, HistoryReadPolicy, ReadHistory
+from investigation_agent.application.thread_locks import ThreadLockRegistry
+from investigation_agent.config.secrets import ServingSecrets
+from investigation_agent.config.settings import Settings
+from investigation_agent.db.checkpointer import PostgresCheckpointStore, create_checkpointer
+from investigation_agent.db.evidence_reader import PostgresEvidenceReader
+from investigation_agent.db.pools import (
     DatabasePools,
     PoolBounds,
     create_database_pools,
     probe_database_readiness,
 )
-from investigation_agent.api.dependencies import ReadinessResult
-from investigation_agent.application.delete_thread import DeleteThread
-from investigation_agent.application.invoke_turn import InvocationPolicy, InvokeTurn
-from investigation_agent.application.read_history import (
-    CheckpointReader,
-    CursorCodec,
-    HistoryReadPolicy,
-    ReadHistory,
+from investigation_agent.db.record_query_executor import (
+    ExecutorLimits,
+    PostgresRecordQueryExecutor,
 )
-from investigation_agent.application.thread_locks import ThreadLockRegistry
-from investigation_agent.config.secrets import ServingSecrets
-from investigation_agent.config.settings import Settings
+from investigation_agent.domain.connections import GraphLimits
 from investigation_agent.genai.evidence_search.agent import SearchAgentPolicy, SearchEvidenceAgent
 from investigation_agent.genai.evidence_search.llm import BedrockTextEmbedder
 from investigation_agent.genai.evidence_search.retrieval import FusionPolicy
@@ -45,21 +46,20 @@ from investigation_agent.genai.investigation.agent import (
     AgentLimits,
     build_investigation_agent,
 )
-from investigation_agent.genai.investigation.connections import FindConnections, GraphLimits
-from investigation_agent.genai.investigation.prompts import (
-    CLOSURE_SYSTEM_PROMPT,
-    GROUNDING_SYSTEM_PROMPT,
-)
-from investigation_agent.genai.investigation.schemas import AnswerDraft, GroundingVerdict
+from investigation_agent.genai.investigation.investigator import LangGraphInvestigator
+from investigation_agent.genai.investigation.llm import build_investigation_models
 from investigation_agent.genai.investigation.tools import (
     ToolDependencies,
     build_investigation_tools,
 )
 from investigation_agent.genai.record_query.agent import QueryAgentPolicy, QueryRecordsAgent
-from investigation_agent.genai.record_query.executor import ExecutorLimits
-from investigation_agent.genai.shared.llm import ModelClients, build_model_clients
-from investigation_agent.genai.shared.retries import BOTOCORE_TRANSIENT_ERRORS, RetryPolicy
-from investigation_agent.genai.shared.structured import StructuredRunner
+from investigation_agent.genai.shared.llm import (
+    ChatModel,
+    EmbeddingModel,
+    build_chat_model,
+    build_embedding_model,
+)
+from investigation_agent.genai.shared.retry import BOTOCORE_TRANSIENT_ERRORS, RetryPolicy
 from investigation_agent.genai.state_projection.llm import ProjectionModelRunner
 from investigation_agent.observability.events import InvestigationInstruments
 from investigation_agent.observability.instrumentation import (
@@ -69,6 +69,8 @@ from investigation_agent.observability.instrumentation import (
     LogicalToolTelemetryMiddleware,
     PhysicalToolTelemetryMiddleware,
 )
+from investigation_agent.observability.turn_observation import TurnObserver
+from investigation_agent.ports.investigator import Investigator
 
 SERVICE_NAMESPACE = "deep-analyst"
 POLICY_VERSION = "investigation-policy@2"
@@ -101,9 +103,25 @@ class Runtime:
     sse_heartbeat_s: float
     readiness_timeout_s: float
     shutdown_timeout_s: float
+    turn_observer: TurnObserver | None
+    investigator: Investigator
     agent: Any
     checkpointer: Any
     close: Callable[[], Awaitable[None]]
+
+
+@dataclass(frozen=True, slots=True)
+class ModelClients:
+    """Composition-owned model handles supplied to task-level GenAI binders."""
+
+    planner: ChatModel
+    guardrail: ChatModel
+    search: ChatModel
+    query: ChatModel
+    projection: ChatModel
+    verifier: ChatModel
+    closure: ChatModel
+    embeddings: EmbeddingModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +185,33 @@ def _default_reader(pools: DatabasePools, settings: Settings) -> PostgresEvidenc
     )
 
 
+def _default_model_clients(settings: Settings, callbacks: Sequence[object]) -> ModelClients:
+    def chat() -> ChatModel:
+        return build_chat_model(
+            model_id=settings.bedrock_chat_model_id,
+            region_name=settings.aws_region,
+            timeout_s=settings.model_timeout_s,
+            temperature=settings.model_temperature,
+            reasoning_effort=settings.model_reasoning_effort,
+            callbacks=callbacks,
+        )
+
+    return ModelClients(
+        planner=chat(),
+        guardrail=chat(),
+        search=chat(),
+        query=chat(),
+        projection=chat(),
+        verifier=chat(),
+        closure=chat(),
+        embeddings=build_embedding_model(
+            model_id=settings.bedrock_embedding_model_id,
+            region_name=settings.aws_region,
+            timeout_s=settings.model_timeout_s,
+        ),
+    )
+
+
 def build_agent_components(
     settings: Settings,
     *,
@@ -200,12 +245,15 @@ def build_agent_components(
     )
     query = QueryRecordsAgent(
         model=clients.query,
-        reader_pool=reader_pool,
-        executor_limits=ExecutorLimits(
-            max_rows=settings.max_query_rows,
-            max_bytes=settings.max_result_bytes,
-            statement_timeout_ms=int(settings.tool_timeout_s * 1000),
-            acquisition_timeout_s=settings.pool_acquire_timeout_s,
+        executor=PostgresRecordQueryExecutor(
+            reader_pool,
+            limits=ExecutorLimits(
+                max_rows=settings.max_query_rows,
+                max_bytes=settings.max_result_bytes,
+                statement_timeout_ms=int(settings.tool_timeout_s * 1000),
+                acquisition_timeout_s=settings.pool_acquire_timeout_s,
+                max_physical_attempts=1,
+            ),
         ),
         retry_policy=tool_policy,
         transient_errors=TRANSIENT_ERRORS,
@@ -234,8 +282,15 @@ def build_agent_components(
             transient_errors=TRANSIENT_ERRORS,
         )
     )
+    investigation_models = build_investigation_models(
+        planner=clients.planner,
+        verifier=clients.verifier,
+        closure=clients.closure,
+        retry_policy=model_policy,
+        transient_errors=TRANSIENT_ERRORS,
+    )
     return AgentComponents(
-        model=clients.planner,
+        model=investigation_models.planner,
         tools=tools,
         guardrail=InputGuardrailRunner(
             clients.guardrail,
@@ -247,20 +302,8 @@ def build_agent_components(
             policy=model_policy,
             transient_errors=TRANSIENT_ERRORS,
         ),
-        verifier=StructuredRunner(
-            clients.verifier,
-            GroundingVerdict,
-            GROUNDING_SYSTEM_PROMPT,
-            retry_policy=model_policy,
-            transient_errors=TRANSIENT_ERRORS,
-        ),
-        closure=StructuredRunner(
-            clients.closure,
-            AnswerDraft,
-            CLOSURE_SYSTEM_PROMPT,
-            retry_policy=model_policy,
-            transient_errors=TRANSIENT_ERRORS,
-        ),
+        verifier=investigation_models.verifier,
+        closure=investigation_models.closure,
         projection_model=ProjectionModelRunner(clients.projection),
         retry_policy=model_policy,
         transient_errors=TRANSIENT_ERRORS,
@@ -291,7 +334,7 @@ async def _compose(
 ) -> Runtime:
     callbacks: list[object] = list(factories.callbacks)
     telemetry_middleware: list[Any] = []
-    attempt_factory: AttemptTelemetryFactory | None = None
+    attempt_factory: TurnObserver | None = None
     if factories.telemetry is not None:
         tracer = factories.telemetry.tracer("investigation_agent.genai")
         from observability.genai_metrics import GenAIInstruments
@@ -321,11 +364,10 @@ async def _compose(
                 known_tools=frozenset({"search_evidence", "query_records", "find_connections"})
             ),
         ]
-    clients = (factories.model_clients or (lambda s, c: build_model_clients(s, callbacks=c)))(
-        settings, callbacks
-    )
+    clients = (factories.model_clients or _default_model_clients)(settings, callbacks)
     reader = (factories.evidence_reader or _default_reader)(pools, settings)
     checkpointer = (factories.checkpointer or (lambda p: create_checkpointer(p.writer)))(pools)
+    checkpoint_store = PostgresCheckpointStore(checkpointer)
     components = build_agent_components(
         settings,
         evidence_reader=reader,
@@ -336,9 +378,10 @@ async def _compose(
     agent = build_investigation_agent(
         components, limits=agent_limits(settings), checkpointer=checkpointer
     )
+    investigator = LangGraphInvestigator(agent)
     locks = ThreadLockRegistry()
     invoke_turn = InvokeTurn(
-        graph=agent,
+        investigator=investigator,
         locks=locks,
         policy=InvocationPolicy(
             policy_version=POLICY_VERSION,
@@ -347,11 +390,10 @@ async def _compose(
             max_history_turns=settings.max_history_turns,
         ),
         clock=factories.clock,
-        telemetry=attempt_factory,
     )
     read_history = ReadHistory(
-        graph=agent,
-        checkpointer=cast(CheckpointReader, checkpointer),
+        investigator=investigator,
+        store=checkpoint_store,
         locks=locks,
         cursors=CursorCodec(),
         policy=HistoryReadPolicy(
@@ -359,7 +401,11 @@ async def _compose(
             max_page_size=settings.history_max_page_size,
         ),
     )
-    delete_thread = DeleteThread(graph=agent, checkpointer=checkpointer, locks=locks)
+    delete_thread = DeleteThread(
+        investigator=investigator,
+        store=checkpoint_store,
+        locks=locks,
+    )
 
     async def readiness() -> ReadinessResult:
         return await probe_database_readiness(
@@ -380,6 +426,8 @@ async def _compose(
         sse_heartbeat_s=settings.sse_heartbeat_s,
         readiness_timeout_s=settings.readiness_timeout_s,
         shutdown_timeout_s=settings.shutdown_timeout_s,
+        turn_observer=attempt_factory,
+        investigator=investigator,
         agent=agent,
         checkpointer=checkpointer,
         close=close,
@@ -402,6 +450,7 @@ def observability_config(settings: Settings) -> Any:
 
 
 __all__ = [
+    "ModelClients",
     "POLICY_VERSION",
     "TRANSIENT_ERRORS",
     "Runtime",

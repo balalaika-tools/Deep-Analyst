@@ -24,6 +24,7 @@ from investigation_agent.domain.investigation_state import (
     parse_state,
 )
 from investigation_agent.genai.investigation.agent import EXPECTED_NODE_NAMES
+from investigation_agent.genai.investigation.investigator import LangGraphInvestigator
 
 NOW = datetime(2026, 3, 4, 5, 6, tzinfo=UTC)
 
@@ -95,7 +96,7 @@ class StreamingGraph:
 
 def _service(graph: StreamingGraph, locks: ThreadLockRegistry) -> InvokeTurn:
     return InvokeTurn(
-        graph=graph,
+        investigator=LangGraphInvestigator(graph),
         locks=locks,
         policy=InvocationPolicy(
             policy_version="policy-v1",
@@ -155,10 +156,15 @@ async def _collect(graph: StreamingGraph) -> tuple[list[dict[str, object]], Thre
     return await _stream(_service(graph, locks), _request()), locks
 
 
-async def _stream(service: InvokeTurn, request: InvokeRequest) -> list[dict[str, object]]:
+async def _stream(
+    service: InvokeTurn, request: InvokeRequest, *, observer: Any = None
+) -> list[dict[str, object]]:
     prepared = await service.prepare(request)
     encoded = [
-        event async for event in stream_prepared_turn(prepared, chunk_chars=5, clock=lambda: NOW)
+        event
+        async for event in stream_prepared_turn(
+            prepared, chunk_chars=5, observer=observer, clock=lambda: NOW
+        )
     ]
     return [json.loads(event["data"]) for event in encoded]
 
@@ -459,11 +465,11 @@ async def test_durable_failure_closes_telemetry_with_its_own_failure_class() -> 
     telemetry = RecordingTelemetry()
 
     class Factory:
-        def create(self, **kwargs: Any) -> RecordingTelemetry:
+        def start(self, **kwargs: Any) -> RecordingTelemetry:
             return telemetry
 
     service = InvokeTurn(
-        graph=FailingCommitGraph(),
+        investigator=LangGraphInvestigator(FailingCommitGraph()),
         locks=ThreadLockRegistry(),
         policy=InvocationPolicy(
             policy_version="policy-v1",
@@ -472,9 +478,8 @@ async def test_durable_failure_closes_telemetry_with_its_own_failure_class() -> 
             max_history_turns=10,
         ),
         clock=lambda: NOW,
-        telemetry=Factory(),
     )
-    events = await _stream(service, _request())
+    events = await _stream(service, _request(), observer=Factory())
 
     assert events[-1]["event"] == "run.failed"
     assert cast(dict[str, object], events[-1]["data"])["code"] == "transient_exhausted"

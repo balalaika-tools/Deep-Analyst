@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 from evidence_model import FieldLocator, SourceRef
+from investigation_agent.core.context import CancellationController
 from investigation_agent.domain.investigation_state import (
     ControlState,
     EvidenceCard,
@@ -14,7 +15,7 @@ from investigation_agent.domain.investigation_state import (
     WorkingProjection,
 )
 from investigation_agent.domain.tool_outcome import canonical_fingerprint
-from investigation_agent.genai.shared.retries import CancellationToken, RetryPolicy
+from investigation_agent.genai.shared.retry import RetryPolicy
 from investigation_agent.genai.state_projection.compactor import (
     ProjectionValidationError,
     run_projection,
@@ -176,7 +177,7 @@ async def test_one_repair_is_allowed_and_a_failed_replacement_keeps_the_prior_pr
         model=repairing_model,
         retry_policy=policy,
         transient_errors=(TimeoutError,),
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
         deadline=deadline,
     )
     assert repaired.stale is False
@@ -189,7 +190,7 @@ async def test_one_repair_is_allowed_and_a_failed_replacement_keeps_the_prior_pr
         model=hopeless_model,
         retry_policy=policy,
         transient_errors=(TimeoutError,),
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
         deadline=deadline,
     )
     assert stale.stale is True
@@ -212,7 +213,7 @@ async def test_no_model_call_starts_after_cancellation_or_without_closure_reserv
     policy = RetryPolicy(
         max_attempts=1, initial_delay_s=0, backoff_factor=1, max_delay_s=0, jitter=False
     )
-    cancelled = CancellationToken.create()
+    cancelled = CancellationController.create()
     cancelled.cancel()
     deadline = asyncio.get_running_loop().time() + 5
     result = await run_projection(
@@ -232,7 +233,7 @@ async def test_no_model_call_starts_after_cancellation_or_without_closure_reserv
         model=model,
         retry_policy=policy,
         transient_errors=(),
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
         deadline=deadline,
         can_start_model=lambda: False,
     )
@@ -260,7 +261,7 @@ async def test_malformed_model_output_keeps_the_prior_projection_instead_of_cras
         model=malformed_model,
         retry_policy=policy,
         transient_errors=(TimeoutError,),
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
         deadline=asyncio.get_running_loop().time() + 5,
     )
 
@@ -271,8 +272,6 @@ async def test_malformed_model_output_keeps_the_prior_projection_instead_of_cras
 
 @pytest.mark.asyncio
 async def test_cancellation_during_projection_propagates() -> None:
-    from investigation_agent.genai.shared.retries import OperationCancelledError
-
     state = _state(_card("evidence-1"))
     request = _request(state)
 
@@ -280,9 +279,9 @@ async def test_cancellation_during_projection_propagates() -> None:
         req: ProjectionInput, *, repair_violations: tuple[str, ...] = ()
     ) -> WorkingProjection:
         del req, repair_violations
-        raise OperationCancelledError
+        raise asyncio.CancelledError
 
-    with pytest.raises(OperationCancelledError):
+    with pytest.raises(asyncio.CancelledError):
         await run_projection(
             request,
             state,
@@ -295,7 +294,7 @@ async def test_cancellation_during_projection_propagates() -> None:
                 jitter=False,
             ),
             transient_errors=(),
-            cancellation=CancellationToken.create(),
+            cancellation=CancellationController.create(),
             deadline=asyncio.get_running_loop().time() + 5,
         )
 
@@ -321,7 +320,7 @@ async def test_malformed_repair_output_after_a_validation_failure_also_stays_sta
         model=model,
         retry_policy=policy,
         transient_errors=(TimeoutError,),
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
         deadline=asyncio.get_running_loop().time() + 5,
     )
 

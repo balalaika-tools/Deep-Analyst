@@ -20,8 +20,6 @@ class RecordingResponse(Response):
 
 
 class PreparedStub:
-    telemetry = None
-
     async def close(self) -> None:
         return None
 

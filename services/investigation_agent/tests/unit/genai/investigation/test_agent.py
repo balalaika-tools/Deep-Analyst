@@ -886,7 +886,7 @@ async def test_repair_model_calls_count_against_the_loop_limit(support: Any) -> 
 async def test_budget_exhausted_inside_a_tool_is_reported_as_budget_exhausted(
     support: Any,
 ) -> None:
-    from investigation_agent.core.errors import BudgetExhaustedFailure
+    from investigation_agent.core.context import ExecutionDeadlineExceeded
 
     responses = _search_then_answer(
         support,
@@ -894,7 +894,9 @@ async def test_budget_exhausted_inside_a_tool_is_reported_as_budget_exhausted(
         evidence_ids=(),
         kind="limitation",
     )
-    behaviour = support.FakeToolBehaviour(outcomes={"search_evidence": [BudgetExhaustedFailure()]})
+    behaviour = support.FakeToolBehaviour(
+        outcomes={"search_evidence": [ExecutionDeadlineExceeded()]}
+    )
     harness = support.build_harness(responses, behaviour=behaviour)
 
     state, _ = await harness.run_turn()

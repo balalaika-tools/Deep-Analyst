@@ -9,15 +9,16 @@ from typing import Any
 
 import pytest
 from evidence_model import FieldLocator, SourceRef
+from investigation_agent.core.context import CancellationController
 from investigation_agent.genai.evidence_search.agent import SearchAgentPolicy, SearchEvidenceAgent
 from investigation_agent.genai.evidence_search.retrieval import FusionPolicy
-from investigation_agent.genai.evidence_search.schemas import (
+from investigation_agent.genai.evidence_search.schemas import SearchIntent
+from investigation_agent.genai.shared.retry import RetryPolicy
+from investigation_agent.ports.evidence_search import (
     RetrievalCandidate,
     RetrievalModality,
     RetrievalQuery,
-    SearchIntent,
 )
-from investigation_agent.genai.shared.retries import CancellationToken, RetryPolicy
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -197,7 +198,7 @@ async def _run(
         _intent(),
         call_id="call-1",
         deadline=asyncio.get_running_loop().time() + 5,
-        cancellation=CancellationToken.create(),
+        cancellation=CancellationController.create(),
         seen_chunk_ids=seen,
         progress=None if progress is None else progress.append,
     )

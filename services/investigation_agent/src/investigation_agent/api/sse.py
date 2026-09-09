@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sse_starlette import ServerSentEvent
@@ -16,6 +17,11 @@ from investigation_agent.api.problems import PublicFailure, public_failure, publ
 from investigation_agent.application.invoke_turn import PreparedTurn, PreparedTurnKind
 from investigation_agent.domain.history import Citation, HistoryMessage, HistoryRole, TurnStatus
 from investigation_agent.domain.investigation_state import InvestigationState
+from investigation_agent.observability.turn_observation import (
+    FailureClass,
+    TurnObservation,
+    TurnObserver,
+)
 
 
 class PublicEvent(StrEnum):
@@ -111,6 +117,7 @@ async def stream_prepared_turn(
     prepared: PreparedTurn,
     *,
     chunk_chars: int,
+    observer: TurnObserver | None = None,
     disconnected: DisconnectProbe | None = None,
     clock: Clock | None = None,
 ) -> AsyncIterator[dict[str, str]]:
@@ -120,7 +127,12 @@ async def stream_prepared_turn(
         raise ValueError("SSE chunk size must contain 1-16384 characters")
     disconnect_probe = disconnected or _connected
     now = clock or (lambda: datetime.now(UTC))
-    telemetry = prepared.telemetry
+    telemetry = _start_observation(prepared, observer)
+    if telemetry is not None and prepared.graph_input is not None:
+        prepared = replace(
+            prepared,
+            graph_input=_with_trace_carrier(prepared.graph_input, telemetry.trace_carrier()),
+        )
     terminal_emitted = False
     try:
         if await disconnect_probe():
@@ -130,7 +142,7 @@ async def stream_prepared_turn(
         yield _encoded(_envelope(prepared, PublicEvent.RUN_STARTED, StartedData(), clock=now))
 
         try:
-            async for raw_event in _traced_events(prepared):
+            async for raw_event in _traced_events(prepared, telemetry):
                 if await disconnect_probe():
                     prepared.cancellation.cancel()
                     _close_telemetry(telemetry, outcome="cancelled")
@@ -221,10 +233,36 @@ async def stream_prepared_turn(
         await prepared.close()
 
 
-async def _traced_events(prepared: PreparedTurn) -> AsyncIterator[object]:
+def _start_observation(
+    prepared: PreparedTurn, observer: TurnObserver | None
+) -> TurnObservation | None:
+    if observer is None or prepared.attempt == 0:
+        return None
+    return observer.start(
+        thread_id=prepared.thread_id,
+        turn_id=prepared.turn_id,
+        attempt=prepared.attempt,
+        prior_trace_carrier=prepared.prior_trace_carrier,
+        api_started_at=time.perf_counter(),
+    )
+
+
+def _with_trace_carrier(
+    graph_input: Mapping[str, object], carrier: Mapping[str, str]
+) -> dict[str, object]:
+    payload = dict(graph_input)
+    raw_turn = payload.get("turn")
+    turn = dict(raw_turn) if isinstance(raw_turn, Mapping) else {}
+    turn["prior_trace_carrier"] = [[key, value] for key, value in sorted(carrier.items())]
+    payload["turn"] = turn
+    return payload
+
+
+async def _traced_events(
+    prepared: PreparedTurn, telemetry: TurnObservation | None
+) -> AsyncIterator[object]:
     """Run graph events under the attempt root without leaving it current across yields."""
 
-    telemetry = prepared.telemetry
     source = prepared.graph_events()
     if telemetry is None:
         async for event in source:
@@ -254,7 +292,7 @@ def _cooperatively_cancelled(prepared: PreparedTurn) -> bool:
 
 
 # Durable ``safe_failure_code`` values folded onto the telemetry failure taxonomy.
-_FAILURE_CLASSES: dict[str, str] = {
+_FAILURE_CLASSES: dict[str, FailureClass] = {
     "invalid_request": "validation",
     "conflict": "conflict",
     "thread_full": "conflict",
@@ -274,7 +312,7 @@ _FAILURE_CLASSES: dict[str, str] = {
 }
 
 
-def _terminal_failure_class(state: InvestigationState) -> str:
+def _terminal_failure_class(state: InvestigationState) -> FailureClass:
     turn = state.turn
     if turn is None or turn.status is not TurnStatus.FAILED:
         return "internal"
@@ -293,11 +331,11 @@ def _terminal_outcome(state: InvestigationState, *, terminal_emitted: bool) -> s
 
 
 def _close_telemetry(
-    telemetry: Any,
+    telemetry: TurnObservation | None,
     *,
     outcome: str,
     exc: BaseException | None = None,
-    failure_class: str = "internal",
+    failure_class: FailureClass = "internal",
 ) -> None:
     """Close the attempt root exactly once with the correct status; never raise."""
 
@@ -321,7 +359,7 @@ async def _terminal_events(
     chunk_chars: int,
     disconnected: DisconnectProbe,
     clock: Clock,
-    telemetry: Any = None,
+    telemetry: TurnObservation | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     turn = state.turn
     if turn is None or turn.turn_id != prepared.turn_id:

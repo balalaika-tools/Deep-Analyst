@@ -19,7 +19,6 @@ from investigation_agent.application.invoke_turn import (
 )
 from investigation_agent.application.thread_locks import ThreadLockRegistry
 from investigation_agent.core.context import RuntimeContext
-from investigation_agent.core.errors import IncompatibleStateFailure
 from investigation_agent.domain.history import (
     TurnStatus,
     append_assistant_message,
@@ -30,44 +29,43 @@ from investigation_agent.domain.history import (
 )
 from investigation_agent.domain.investigation_state import (
     ControlState,
+    IncompatibleStateError,
     InvestigationState,
     new_turn_state,
+    parse_state,
 )
+from investigation_agent.ports.investigator import IncompatibleInvestigationState
 from pydantic import ValidationError
 
 NOW = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
-
-
-@dataclass(frozen=True)
-class FakeSnapshot:
-    values: Mapping[str, Any]
 
 
 @dataclass
 class FakeGraph:
     state: InvestigationState | None = None
     raw_values: Mapping[str, Any] | None = None
-    get_calls: list[Mapping[str, object]] = field(default_factory=list)
+    get_calls: list[str] = field(default_factory=list)
     stream_calls: list[Mapping[str, Any] | None] = field(default_factory=list)
 
-    async def aget_state(self, config: Mapping[str, object]) -> FakeSnapshot:
-        self.get_calls.append(config)
+    async def load_state(self, thread_id: str) -> InvestigationState | None:
+        self.get_calls.append(thread_id)
         if self.raw_values is not None:
-            return FakeSnapshot(self.raw_values)
-        return FakeSnapshot(self.state.as_update() if self.state else {})
+            try:
+                return parse_state(self.raw_values)
+            except IncompatibleStateError:
+                raise IncompatibleInvestigationState from None
+        return self.state
 
-    async def astream(
+    async def stream_turn(
         self,
-        input: Mapping[str, Any] | None,
-        config: Mapping[str, object],
+        turn_input: Mapping[str, Any] | None,
         *,
+        thread_id: str,
         context: RuntimeContext,
-        stream_mode: list[str],
-        durability: str,
-        version: str,
+        max_steps: int,
     ) -> AsyncIterator[object]:
-        del config, context, stream_mode, durability, version
-        self.stream_calls.append(input)
+        del thread_id, context, max_steps
+        self.stream_calls.append(turn_input)
         if False:
             yield None
 
@@ -80,7 +78,7 @@ def _service(
     graph: FakeGraph, *, locks: ThreadLockRegistry | None = None, max_turns: int = 10
 ) -> InvokeTurn:
     return InvokeTurn(
-        graph=graph,
+        investigator=graph,
         locks=locks or ThreadLockRegistry(),
         policy=InvocationPolicy(
             policy_version="policy-v1",
@@ -141,11 +139,7 @@ async def test_new_thread_uses_the_public_thread_id_for_the_saver() -> None:
     prepared = await _service(graph).prepare(request)
 
     assert prepared.kind is PreparedTurnKind.NEW
-    assert prepared.config["configurable"] == {"thread_id": "thread-1"}
-    assert prepared.config["metadata"] == {
-        "app": "investigation",
-        "public_thread_id": "thread-1",
-    }
+    assert graph.get_calls == ["thread-1"]
     assert prepared.graph_input is not None
     assert prepared.graph_input["turn"]["utterance"] == "Find the transfer"
     assert prepared.graph_input["messages"][0]["content"] == "Find the transfer"
@@ -249,7 +243,7 @@ async def test_full_thread_and_incompatible_state_are_rejected_before_execution(
 
     stale = {**completed.as_update()}
     stale["control"] = {**stale["control"], "state_schema_version": 1}
-    with pytest.raises(IncompatibleStateFailure):
+    with pytest.raises(IncompatibleInvestigationState):
         await _service(FakeGraph(raw_values=stale)).prepare(request)
 
 
@@ -333,8 +327,8 @@ async def test_older_request_id_with_different_message_conflicts_instead_of_star
 
 @dataclass
 class SlowGraph(FakeGraph):
-    async def astream(self, input: Any, config: Any, **kwargs: Any) -> AsyncIterator[object]:
-        del input, config, kwargs
+    async def stream_turn(self, *args: Any, **kwargs: Any) -> AsyncIterator[object]:
+        del args, kwargs
         yield {"type": "custom", "data": {}}
         await asyncio.sleep(10)
         yield {"type": "custom", "data": {}}
@@ -343,7 +337,7 @@ class SlowGraph(FakeGraph):
 @pytest.mark.asyncio
 async def test_turn_timeout_surfaces_as_timeout_error_even_when_consumer_is_slow() -> None:
     service = InvokeTurn(
-        graph=SlowGraph(),
+        investigator=SlowGraph(),
         locks=ThreadLockRegistry(),
         policy=InvocationPolicy(
             policy_version="policy-v1",
