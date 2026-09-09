@@ -68,7 +68,13 @@ def test_nested_agent_prompts_keep_structured_output_and_provenance_boundaries()
 def test_main_prompt_explains_safe_graph_tool_routing() -> None:
     prompt = normalized(MAIN_SYSTEM_PROMPT)
 
-    assert "exact entity IDs already exposed" in prompt
+    assert "deterministically derived from normalized fields returned by query_records" in prompt
+    assert "<ENTITY_TYPE>:<normalized_value>" in prompt
+    assert "accounts_v1.iban" in prompt
+    assert "communications_v1.from_endpoint" in prompt
+    assert "transactions_v1.txn_id" in prompt
+    assert "Never derive actor IDs from names or labels" in prompt
+    assert "never derive IDs from arbitrary search_evidence text" in prompt
     assert "Prefer confirmed relationships" in prompt
     assert "stored subject-to-object direction" in prompt
     assert "terminal entity-type filter" in prompt
@@ -78,7 +84,10 @@ def test_graph_tool_description_explains_operational_contract() -> None:
     description = normalized(FIND_CONNECTIONS_TOOL_DESCRIPTION)
 
     assert "exact entity IDs" in description
-    assert "never pass names or invented IDs" in description
+    assert "normalized query_records fields documented in the system instructions" in description
+    assert "that exact derivation is not an invented ID" in description
+    assert "Never pass names, labels, unverified transformations" in description
+    assert "search_evidence text" in description
     assert "subject-to-object meaning" in description
     assert "confirmed relationships by default" in description
     assert "terminal entity types" in description

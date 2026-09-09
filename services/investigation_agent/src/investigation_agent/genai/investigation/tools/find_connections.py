@@ -27,7 +27,9 @@ from investigation_agent.genai.shared.retry import RetryPolicy, retry_async, ret
 _PROGRESS_KEYS = frozenset({"phase", "tool", "attempt", "count"})
 
 FIND_CONNECTIONS_TOOL_DESCRIPTION = """Traverse sourced relationships from exact entity IDs.
-Discover seed IDs with search_evidence or query_records first; never pass names or invented IDs.
+Obtain seeds from prior graph evidence or derive keyed IDs only from the normalized query_records
+fields documented in the system instructions; that exact derivation is not an invented ID. Never
+pass names, labels, unverified transformations, or IDs reconstructed from search_evidence text.
 Predicates retain subject-to-object meaning even though traversal follows edges in either direction.
 Use confirmed relationships by default, and include proposed relationships only for explicitly
 labelled hypotheses. Filters can restrict predicates, occurrence time, and terminal entity types;

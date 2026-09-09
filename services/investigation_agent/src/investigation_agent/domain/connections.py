@@ -118,8 +118,10 @@ class FindConnectionsInput(StrictModel):
             min_length=1,
             max_length=32,
             description=(
-                "Exact globally stable entity IDs discovered in retrieved evidence or structured "
-                "records. Supply IDs, never entity names, labels, or invented identifiers."
+                "Exact globally stable entity IDs exposed by graph evidence or deterministically "
+                "derived from the normalized query_records fields documented in the system "
+                "instructions. Supply IDs, never entity names, labels, unverified transformations, "
+                "or identifiers reconstructed from search_evidence text."
             ),
         ),
     ]

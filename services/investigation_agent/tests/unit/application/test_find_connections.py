@@ -195,7 +195,10 @@ def test_tool_schema_explains_ontology_and_filter_semantics() -> None:
     ]
     assert "hypothesis" in filters["statuses"]["description"]
     assert "terminal non-seed node" in filters["target_entity_types"]["description"]
-    assert "never entity names" in schema["properties"]["seed_entity_ids"]["description"]
+    seed_description = schema["properties"]["seed_entity_ids"]["description"]
+    assert "normalized query_records fields" in seed_description
+    assert "never entity names" in seed_description
+    assert "search_evidence text" in seed_description
 
 
 def test_removed_scope_field_is_rejected() -> None:
